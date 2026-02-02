@@ -1,0 +1,1843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DME Order Completeness Checker — Midwest Compression</title>
+    <style>
+        :root {
+            --primary: #0d6eaa;
+            --primary-dark: #094d77;
+            --primary-light: #e8f4fc;
+            --success: #198754;
+            --success-light: #d1e7dd;
+            --warning: #ffc107;
+            --warning-light: #fff3cd;
+            --danger: #dc3545;
+            --danger-light: #f8d7da;
+            --gray-100: #f8f9fa;
+            --gray-200: #e9ecef;
+            --gray-300: #dee2e6;
+            --gray-500: #6c757d;
+            --gray-700: #495057;
+            --gray-900: #212529;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: var(--gray-100);
+            color: var(--gray-900);
+            line-height: 1.5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 1.5rem;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        header .subtitle {
+            font-size: 0.85rem;
+            opacity: 0.9;
+        }
+
+        main {
+            flex: 1;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1.5rem;
+            width: 100%;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+        }
+
+        .card-header {
+            background: var(--gray-100);
+            border-bottom: 1px solid var(--gray-200);
+            padding: 1rem 1.25rem;
+            font-weight: 600;
+            color: var(--gray-700);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .card-header .step-number {
+            background: var(--primary);
+            color: white;
+            width: 1.75rem;
+            height: 1.75rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.875rem;
+        }
+
+        .card-body {
+            padding: 1.25rem;
+        }
+
+        .category-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .category-btn {
+            padding: 1.25rem;
+            border: 2px solid var(--gray-200);
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .category-btn:hover {
+            border-color: var(--primary);
+            background: var(--primary-light);
+        }
+
+        .category-btn.selected {
+            border-color: var(--primary);
+            background: var(--primary-light);
+            box-shadow: 0 0 0 3px rgba(13, 110, 170, 0.2);
+        }
+
+        .category-btn .icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .category-btn .label {
+            font-weight: 600;
+            color: var(--gray-700);
+        }
+
+        .category-btn .desc {
+            font-size: 0.8rem;
+            color: var(--gray-500);
+            margin-top: 0.25rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .form-label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: var(--gray-700);
+        }
+
+        .form-select, .form-input {
+            width: 100%;
+            padding: 0.625rem 0.875rem;
+            border: 1px solid var(--gray-300);
+            border-radius: 6px;
+            font-size: 1rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .form-select:focus, .form-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(13, 110, 170, 0.15);
+        }
+
+        .info-box {
+            background: var(--primary-light);
+            border: 1px solid var(--primary);
+            border-radius: 6px;
+            padding: 1rem;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .info-box.warning {
+            background: var(--warning-light);
+            border-color: var(--warning);
+        }
+
+        .checklist-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .checklist-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .checklist-section-title {
+            font-weight: 600;
+            color: var(--gray-700);
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .checklist-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            padding: 0.625rem 0;
+            border-bottom: 1px solid var(--gray-100);
+        }
+
+        .checklist-item:last-child {
+            border-bottom: none;
+        }
+
+        .checklist-item input[type="checkbox"] {
+            width: 1.25rem;
+            height: 1.25rem;
+            margin-top: 0.125rem;
+            cursor: pointer;
+            accent-color: var(--primary);
+        }
+
+        .checklist-item label {
+            flex: 1;
+            cursor: pointer;
+        }
+
+        .checklist-item .item-text {
+            display: block;
+        }
+
+        .checklist-item .item-citation {
+            font-size: 0.8rem;
+            color: var(--gray-500);
+            margin-top: 0.125rem;
+        }
+
+        .checklist-item.critical .item-text::before {
+            content: "⚠ ";
+            color: var(--danger);
+        }
+
+        .results-panel {
+            position: sticky;
+            top: 1rem;
+        }
+
+        .status-banner {
+            padding: 1.25rem;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+
+        .status-banner.green {
+            background: var(--success-light);
+            border: 2px solid var(--success);
+            color: var(--success);
+        }
+
+        .status-banner.yellow {
+            background: var(--warning-light);
+            border: 2px solid var(--warning);
+            color: #856404;
+        }
+
+        .status-banner.red {
+            background: var(--danger-light);
+            border: 2px solid var(--danger);
+            color: var(--danger);
+        }
+
+        .status-banner .status-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .status-banner .status-text {
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .status-banner .status-desc {
+            font-size: 0.9rem;
+            margin-top: 0.25rem;
+            opacity: 0.9;
+        }
+
+        .missing-list {
+            margin-bottom: 1rem;
+        }
+
+        .missing-item {
+            padding: 0.75rem;
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .missing-item.critical {
+            background: var(--danger-light);
+            border-left: 4px solid var(--danger);
+        }
+
+        .missing-item.warning {
+            background: var(--warning-light);
+            border-left: 4px solid var(--warning);
+        }
+
+        .missing-item .severity {
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .missing-item.critical .severity {
+            color: var(--danger);
+        }
+
+        .missing-item.warning .severity {
+            color: #856404;
+        }
+
+        .missing-item .explanation {
+            color: var(--gray-700);
+            margin-top: 0.25rem;
+            font-size: 0.85rem;
+        }
+
+        .missing-item .citation {
+            color: var(--gray-500);
+            font-size: 0.8rem;
+            font-style: italic;
+            margin-top: 0.25rem;
+        }
+
+        .request-notes {
+            background: var(--gray-100);
+            border: 1px solid var(--gray-300);
+            border-radius: 6px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+
+        .request-notes h4 {
+            font-size: 0.9rem;
+            margin-bottom: 0.75rem;
+            color: var(--gray-700);
+        }
+
+        .request-notes-content {
+            background: white;
+            border: 1px solid var(--gray-200);
+            border-radius: 4px;
+            padding: 0.75rem;
+            font-family: "Courier New", monospace;
+            font-size: 0.85rem;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.625rem 1.25rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background: var(--gray-200);
+            color: var(--gray-700);
+        }
+
+        .btn-secondary:hover {
+            background: var(--gray-300);
+        }
+
+        .btn-outline {
+            background: white;
+            border: 1px solid var(--gray-300);
+            color: var(--gray-700);
+        }
+
+        .btn-outline:hover {
+            background: var(--gray-100);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (min-width: 992px) {
+            .two-column {
+                grid-template-columns: 1fr 400px;
+            }
+        }
+
+        footer {
+            background: var(--gray-200);
+            padding: 1rem;
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--gray-500);
+            border-top: 1px solid var(--gray-300);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .inline-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        @media print {
+            header, footer, .btn-group, .category-grid, .form-group {
+                break-inside: avoid;
+            }
+            .card {
+                box-shadow: none;
+                border: 1px solid var(--gray-300);
+            }
+            .results-panel {
+                position: static;
+            }
+        }
+
+        .sub-items {
+            margin-left: 2rem;
+            margin-top: 0.5rem;
+            padding-left: 0.75rem;
+            border-left: 2px solid var(--gray-200);
+        }
+
+        .sub-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            padding: 0.375rem 0;
+            font-size: 0.9rem;
+        }
+
+        .sub-item input[type="checkbox"] {
+            width: 1rem;
+            height: 1rem;
+            margin-top: 0.2rem;
+        }
+
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .radio-option {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--gray-200);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .radio-option:hover {
+            background: var(--gray-100);
+        }
+
+        .radio-option.selected {
+            border-color: var(--primary);
+            background: var(--primary-light);
+        }
+
+        .radio-option input[type="radio"] {
+            accent-color: var(--primary);
+        }
+
+        /* PDF Drop Zone & Viewer */
+        .pdf-dropzone {
+            border: 3px dashed var(--gray-300);
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            background: var(--gray-100);
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .pdf-dropzone:hover,
+        .pdf-dropzone.dragover {
+            border-color: var(--primary);
+            background: var(--primary-light);
+        }
+
+        .pdf-dropzone.dragover {
+            transform: scale(1.01);
+        }
+
+        .pdf-dropzone .drop-icon {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .pdf-dropzone .drop-text {
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--gray-700);
+        }
+
+        .pdf-dropzone .drop-hint {
+            font-size: 0.85rem;
+            color: var(--gray-500);
+            margin-top: 0.25rem;
+        }
+
+        .pdf-dropzone input[type="file"] {
+            display: none;
+        }
+
+        .pdf-viewer-container {
+            background: var(--gray-200);
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .pdf-viewer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1rem;
+            background: var(--gray-700);
+            color: white;
+        }
+
+        .pdf-viewer-header .pdf-filename {
+            font-weight: 500;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1;
+            margin-right: 1rem;
+        }
+
+        .pdf-viewer-header .pdf-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .pdf-viewer-header .btn-icon {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: white;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            transition: background 0.2s;
+        }
+
+        .pdf-viewer-header .btn-icon:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .pdf-viewer-frame {
+            width: 100%;
+            height: 500px;
+            border: none;
+            background: white;
+        }
+
+        .pdf-viewer-card {
+            margin-bottom: 1.5rem;
+        }
+
+        /* Three-column layout when PDF is loaded */
+        .main-layout {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .main-layout.with-pdf {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (min-width: 1400px) {
+            .main-layout.with-pdf {
+                grid-template-columns: 500px 1fr;
+            }
+
+            .main-layout.with-pdf .pdf-column {
+                position: sticky;
+                top: 1rem;
+                align-self: start;
+                max-height: calc(100vh - 2rem);
+            }
+
+            .main-layout.with-pdf .pdf-viewer-frame {
+                height: calc(100vh - 8rem);
+                min-height: 400px;
+            }
+        }
+
+        @media (min-width: 1800px) {
+            .main-layout.with-pdf {
+                grid-template-columns: 600px 1fr;
+            }
+        }
+
+        .pdf-column {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .checklist-column {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Page navigation for PDF */
+        .pdf-nav {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            background: var(--gray-100);
+            border-top: 1px solid var(--gray-300);
+        }
+
+        .pdf-nav button {
+            padding: 0.375rem 0.75rem;
+            border: 1px solid var(--gray-300);
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+
+        .pdf-nav button:hover:not(:disabled) {
+            background: var(--gray-100);
+        }
+
+        .pdf-nav button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pdf-nav .page-info {
+            font-size: 0.85rem;
+            color: var(--gray-600);
+            min-width: 80px;
+            text-align: center;
+        }
+
+        @media print {
+            .pdf-viewer-card, .pdf-dropzone {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Midwest Compression — Order Completeness Checker</h1>
+        <div class="subtitle">Internal Use Only — Not for Patient Distribution</div>
+    </header>
+
+    <main>
+        <!-- PDF Drop Zone -->
+        <div class="card pdf-viewer-card" id="pdfCard">
+            <div class="card-header">
+                <span class="step-number">📄</span>
+                Fax / Documentation Viewer
+            </div>
+            <div class="card-body">
+                <div class="pdf-dropzone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+                    <div class="drop-icon">📥</div>
+                    <div class="drop-text">Drag & drop PDF here</div>
+                    <div class="drop-hint">or click to browse — view fax while completing checklist</div>
+                    <input type="file" id="fileInput" accept=".pdf,application/pdf" onchange="handleFileSelect(event)">
+                </div>
+                <div class="pdf-viewer-container hidden" id="pdfViewer">
+                    <div class="pdf-viewer-header">
+                        <span class="pdf-filename" id="pdfFilename">document.pdf</span>
+                        <div class="pdf-actions">
+                            <button class="btn-icon" onclick="openPdfNewTab()" title="Open in new tab">↗️</button>
+                            <button class="btn-icon" onclick="closePdf()" title="Close PDF">✕</button>
+                        </div>
+                    </div>
+                    <iframe class="pdf-viewer-frame" id="pdfFrame"></iframe>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 1: Product Category -->
+        <div class="card">
+            <div class="card-header">
+                <span class="step-number">1</span>
+                Select Product Category
+            </div>
+            <div class="card-body">
+                <div class="category-grid">
+                    <button type="button" class="category-btn" data-category="pcd" onclick="selectCategory('pcd')">
+                        <div class="icon">🫁</div>
+                        <div class="label">Pneumatic Compression</div>
+                        <div class="desc">E0650-E0652, Accessories</div>
+                    </button>
+                    <button type="button" class="category-btn" data-category="garment" onclick="selectCategory('garment')">
+                        <div class="icon">🧦</div>
+                        <div class="label">Compression Garments</div>
+                        <div class="desc">A6530-A6611 range</div>
+                    </button>
+                    <button type="button" class="category-btn" data-category="shoe" onclick="selectCategory('shoe')">
+                        <div class="icon">👟</div>
+                        <div class="label">Diabetic Shoes</div>
+                        <div class="desc">A5500-A5514</div>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: HCPCS Code Selection -->
+        <div class="card hidden" id="step2">
+            <div class="card-header">
+                <span class="step-number">2</span>
+                Select HCPCS Code
+            </div>
+            <div class="card-body">
+                <div class="inline-grid">
+                    <div class="form-group">
+                        <label class="form-label">HCPCS Code</label>
+                        <select class="form-select" id="hcpcsSelect" onchange="selectHCPCS()">
+                            <option value="">— Select Code —</option>
+                        </select>
+                    </div>
+                    <div class="form-group hidden" id="customCodeGroup">
+                        <label class="form-label">Enter HCPCS Code</label>
+                        <input type="text" class="form-input" id="customCode" placeholder="e.g., A6555" maxlength="5" oninput="updateCustomCode()">
+                    </div>
+                </div>
+
+                <!-- PCD-specific: Indication and Date of Service -->
+                <div id="pcdOptions" class="hidden">
+                    <div class="inline-grid" style="margin-top: 1rem;">
+                        <div class="form-group">
+                            <label class="form-label">Indication</label>
+                            <div class="radio-group">
+                                <label class="radio-option" onclick="selectIndication('lymphedema')">
+                                    <input type="radio" name="indication" value="lymphedema">
+                                    <span>Lymphedema (primary or secondary)</span>
+                                </label>
+                                <label class="radio-option" onclick="selectIndication('cvi')">
+                                    <input type="radio" name="indication" value="cvi">
+                                    <span>CVI with Venous Stasis Ulcers</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Date of Service</label>
+                            <input type="date" class="form-input" id="dateOfService" onchange="updateDateOfService()">
+                            <div id="lcdNotice" class="info-box hidden" style="margin-top: 0.5rem;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- E0652 Regulatory Notice -->
+                <div id="e0652Notice" class="info-box warning hidden">
+                    <strong>Important — E0652 Coverage Note:</strong><br>
+                    LCD L33829 was retired effective 11/14/2024. For DOS on or after that date, coverage follows NCD 280.6 only.
+                    The NCD does NOT require a failed trial of E0650/E0651 before E0652, but best practice is still to document conservatively.
+                    CERT, RAC, and MAC auditors are actively reviewing PCD claims.
+                </div>
+            </div>
+        </div>
+
+        <div class="two-column">
+            <!-- Step 3: Documentation Checklist -->
+            <div>
+                <div class="card hidden" id="step3">
+                    <div class="card-header">
+                        <span class="step-number">3</span>
+                        Documentation Checklist
+                    </div>
+                    <div class="card-body" id="checklistContainer">
+                        <!-- Dynamically populated -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 4: Results Panel -->
+            <div>
+                <div class="card hidden" id="step4">
+                    <div class="card-header">
+                        <span class="step-number">4</span>
+                        Results
+                    </div>
+                    <div class="card-body results-panel">
+                        <div id="statusBanner" class="status-banner">
+                            <div class="status-icon">📋</div>
+                            <div class="status-text">Awaiting Input</div>
+                            <div class="status-desc">Complete the checklist above</div>
+                        </div>
+
+                        <div id="missingList" class="missing-list"></div>
+
+                        <div id="requestNotes" class="request-notes hidden">
+                            <h4>📄 Request for Documentation (copy/paste for fax or message):</h4>
+                            <div class="request-notes-content" id="requestNotesContent"></div>
+                            <div class="btn-group" style="margin-top: 0.75rem;">
+                                <button class="btn btn-outline" onclick="copyRequestNotes()">📋 Copy to Clipboard</button>
+                            </div>
+                        </div>
+
+                        <div class="btn-group" style="margin-top: 1rem;">
+                            <button class="btn btn-secondary" onclick="resetAll()">🔄 Reset</button>
+                            <button class="btn btn-outline" onclick="printResults()">🖨️ Print Summary</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        Coverage rules current as of February 2026. LCD L33829 retired 11/14/2024. Garment coverage per CMS-1780-F effective 1/1/2024. Always verify against current CMS/MAC guidance.
+    </footer>
+
+    <script>
+        // ============================================================================
+        // COVERAGE RULES DATA STRUCTURE
+        // Each rule includes: id, text, citation, severity (critical/warning),
+        // explanation (why it's required), and conditions for when it applies
+        // ============================================================================
+
+        const HCPCS_CODES = {
+            pcd: [
+                { code: 'E0650', desc: 'Pneumatic compressor, non-segmental home model' },
+                { code: 'E0651', desc: 'Pneumatic compressor, segmental home model without calibrated gradient pressure' },
+                { code: 'E0652', desc: 'Pneumatic compressor, segmental home model WITH calibrated gradient pressure' },
+                { code: 'E0655-E0673', desc: 'PCD Accessories (sleeves, appliances, etc.)' }
+            ],
+            garment: [
+                { code: 'A6530', desc: 'Gradient compression stocking, below knee, 18-30 mmHg' },
+                { code: 'A6549', desc: 'Gradient compression garment, NOS, daytime use' },
+                { code: 'A6552', desc: 'Gradient compression stocking, below knee, 30-40 mmHg' },
+                { code: 'A6553', desc: 'Gradient compression stocking, below knee, 40-50 mmHg' },
+                { code: 'A6554', desc: 'Gradient compression stocking, below knee, 40+ mmHg' },
+                { code: 'A6584', desc: 'Gradient compression wrap with adjustable straps, NOS' },
+                { code: 'A6593', desc: 'Accessory for gradient compression garment or wrap, NOS' },
+                { code: 'OTHER', desc: 'Other A65xx code (enter manually)' }
+            ],
+            shoe: [
+                { code: 'A5500', desc: 'Depth-inlay shoe (off-the-shelf)' },
+                { code: 'A5501', desc: 'Custom-molded shoe' },
+                { code: 'A5512', desc: 'Multiple density insert, direct formed' },
+                { code: 'A5513', desc: 'Multiple density insert, custom molded' },
+                { code: 'A5514', desc: 'Multiple density insert, custom fabricated' }
+            ]
+        };
+
+        // Universal DMEPOS Requirements - apply to ALL items
+        // Reference: Medicare Program Integrity Manual, Ch. 5; 42 CFR 424.516
+        const UNIVERSAL_REQUIREMENTS = [
+            {
+                id: 'swo_on_file',
+                text: 'Standard Written Order (SWO) on file with: patient name, MBI, order date, detailed item description (HCPCS or brand/model), quantity, treating practitioner name/NPI',
+                citation: 'Medicare Program Integrity Manual, Ch. 5, §5.2',
+                severity: 'critical',
+                explanation: 'The SWO is the foundational document for all DMEPOS claims. Without a complete SWO, the claim will be denied.'
+            },
+            {
+                id: 'swo_signed',
+                text: 'SWO signed and dated by the ordering practitioner',
+                citation: '42 CFR 424.516',
+                severity: 'critical',
+                explanation: 'An unsigned order is not a valid order. The signature must be handwritten or compliant electronic signature.'
+            },
+            {
+                id: 'swo_qualified',
+                text: 'SWO signed by qualified practitioner: MD, DO, DPM, NP, PA, or CNS',
+                citation: '42 CFR 410.38(c)',
+                severity: 'critical',
+                explanation: 'Only certain practitioner types are authorized to order DMEPOS. Orders signed by others (e.g., RN, MA, DC) are not valid.'
+            },
+            {
+                id: 'swo_timing',
+                text: 'SWO received by supplier BEFORE claim submission',
+                citation: 'Medicare Benefit Policy Manual, Ch. 15, §110',
+                severity: 'critical',
+                explanation: 'The supplier must have the written order in their possession before billing Medicare.'
+            },
+            {
+                id: 'dx_code',
+                text: 'Diagnosis code supporting medical necessity is documented',
+                citation: '42 CFR 410.38(b)',
+                severity: 'critical',
+                explanation: 'The ICD-10-CM diagnosis code must be consistent with the item ordered and support medical necessity.'
+            },
+            {
+                id: 'pod',
+                text: 'Proof of delivery on file (delivery ticket signed by beneficiary or delivery carrier tracking)',
+                citation: 'Medicare Program Integrity Manual, Ch. 5, §5.8',
+                severity: 'critical',
+                explanation: 'Medicare requires evidence that the item was actually received by the patient before payment.'
+            },
+            {
+                id: 'pdac',
+                text: 'Product has completed PDAC coding verification for the billed HCPCS code',
+                citation: 'PDAC Contractor Requirements',
+                severity: 'critical',
+                explanation: 'The specific product must be verified by the PDAC contractor to be correctly coded to the HCPCS billed.'
+            }
+        ];
+
+        // Face-to-face / WOPD requirements - for items on the Required List
+        // Reference: 42 CFR 410.38(g)
+        const F2F_WOPD_REQUIREMENTS = [
+            {
+                id: 'f2f_encounter',
+                text: 'Face-to-face encounter documented within 6 months prior to the order date',
+                citation: '42 CFR 410.38(g)(1)',
+                severity: 'critical',
+                explanation: 'For items on the CMS Required Face-to-Face List, the treating practitioner must have seen the patient within 6 months.'
+            },
+            {
+                id: 'wopd_before_delivery',
+                text: 'Written Order Prior to Delivery (WOPD) in supplier possession BEFORE delivery',
+                citation: '42 CFR 410.38(g)(2)',
+                severity: 'critical',
+                explanation: 'For items on the Required WOPD List, the signed order must be received BEFORE the item is delivered to the patient.'
+            }
+        ];
+
+        // PCD for LYMPHEDEMA Requirements - per NCD 280.6
+        const PCD_LYMPHEDEMA_REQUIREMENTS = [
+            {
+                id: 'dx_lymphedema',
+                text: 'Documented diagnosis of lymphedema (primary or secondary) with other causes of edema ruled out',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'The medical record must establish a definitive diagnosis of lymphedema. Other causes (CHF, renal, hepatic, etc.) must be considered and ruled out.'
+            },
+            {
+                id: 'conservative_trial_4wk',
+                text: '4-week trial of conservative therapy has been completed AND documented as failed/insufficient',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'NCD 280.6 requires documentation that conservative therapy was tried for an adequate period and was not effective.'
+            },
+            {
+                id: 'conservative_compression',
+                text: 'Conservative trial included: Compression bandage system or garment (minimum 30 mmHg distally recommended)',
+                citation: 'NCD 280.6; LCD L33829 best practice',
+                severity: 'critical',
+                explanation: 'Compression is the cornerstone of conservative lymphedema management. Documentation should specify the compression level used.'
+            },
+            {
+                id: 'conservative_exercise',
+                text: 'Conservative trial included: Exercise program',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'An exercise program appropriate for lymphedema must have been part of the conservative treatment trial.'
+            },
+            {
+                id: 'conservative_elevation',
+                text: 'Conservative trial included: Elevation of affected limb(s)',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'Limb elevation is a standard component of conservative lymphedema therapy.'
+            },
+            {
+                id: 'conservative_mld',
+                text: 'Conservative trial included: Manual lymphatic drainage (or documented as unavailable)',
+                citation: 'NCD 280.6',
+                severity: 'warning',
+                explanation: 'MLD should be included if available. If not available, this should be documented.'
+            },
+            {
+                id: 'conservative_medication',
+                text: 'If concurrent CHF: appropriate medication management documented',
+                citation: 'NCD 280.6',
+                severity: 'warning',
+                explanation: 'If the patient has CHF, medical optimization should be documented before attributing edema to lymphedema.'
+            },
+            {
+                id: 'patient_compliant',
+                text: 'Patient COMPLIANCE with conservative therapy is documented',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'The patient must have been compliant with the conservative treatment trial. Non-compliance negates the trial.'
+            },
+            {
+                id: 'physician_determination',
+                text: 'Treating physician documented: no significant improvement OR significant symptoms remain after 4-week trial',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'The prescribing physician must make and document the clinical determination that conservative therapy failed.',
+                redFlag: 'conservative_improved'
+            },
+            {
+                id: 'measurements',
+                text: 'Medical records include: symptoms, objective findings, measurements (at multiple time points) establishing severity',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'Objective measurements (circumference, volume) at baseline and after conservative trial document severity and response.'
+            },
+            {
+                id: 'device_response',
+                text: 'Clinical response to initial treatment with the PCD is documented',
+                citation: 'NCD 280.6',
+                severity: 'warning',
+                explanation: 'Documentation that the patient responds to PCD therapy supports continued coverage.'
+            },
+            {
+                id: 'lcmp_requirements',
+                text: 'If LCMP performed assessment: LCMP has no financial relationship with supplier; prescriber received, reviewed, signed and dated LCMP report (on or before Rx date)',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'If a Lymphedema Certified Medical Professional performed the assessment, specific independence and documentation requirements apply.',
+                conditional: true
+            }
+        ];
+
+        // RED FLAG - Conservative therapy showed improvement
+        const CONSERVATIVE_IMPROVED_FLAG = {
+            id: 'conservative_improved',
+            text: 'Conservative therapy trial showed IMPROVEMENT',
+            citation: 'NCD 280.6',
+            severity: 'critical',
+            explanation: 'If conservative therapy produced significant improvement, the PCD is NOT justified under NCD 280.6. The claim will be denied.',
+            isRedFlag: true
+        };
+
+        // PCD for CVI with Venous Stasis Ulcers - per NCD 280.6
+        const PCD_CVI_REQUIREMENTS = [
+            {
+                id: 'dx_cvi_edema',
+                text: 'Documented edema in affected LOWER extremity',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'CVI coverage requires documented edema specifically in the lower extremity.'
+            },
+            {
+                id: 'venous_ulcer',
+                text: 'One or more venous stasis ulcer(s) documented',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'PCD coverage for CVI requires the presence of venous stasis ulcers, not just edema.'
+            },
+            {
+                id: 'conservative_trial_6mo',
+                text: '6-MONTH trial of conservative therapy has FAILED',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'For CVI, the conservative therapy trial must be 6 months (longer than lymphedema).'
+            },
+            {
+                id: 'cvi_conservative_compression',
+                text: 'Conservative trial included: Compression bandage/garment with adequate graduated compression',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'Compression is required as part of the conservative CVI therapy trial.'
+            },
+            {
+                id: 'cvi_conservative_dressings',
+                text: 'Conservative trial included: Appropriate wound dressings',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'Proper wound care must have been provided during the conservative trial.'
+            },
+            {
+                id: 'cvi_conservative_exercise',
+                text: 'Conservative trial included: Exercise',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'Exercise appropriate for CVI must be documented as part of the conservative trial.'
+            },
+            {
+                id: 'cvi_conservative_elevation',
+                text: 'Conservative trial included: Elevation of limb',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'Limb elevation must have been part of the conservative therapy trial.'
+            },
+            {
+                id: 'cvi_patient_compliant',
+                text: 'Patient was compliant with conservative therapy',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'Compliance with the 6-month conservative trial must be documented.'
+            }
+        ];
+
+        // E0652 Additional Requirements
+        const E0652_REQUIREMENTS = [
+            {
+                id: 'e0652_unique',
+                text: 'Documentation of "unique characteristics" preventing satisfactory treatment with E0650 or E0651',
+                citation: 'NCD 280.6',
+                severity: 'critical',
+                explanation: 'The medical record must explain why the patient cannot be adequately treated with a less expensive non-calibrated device.'
+            }
+        ];
+
+        // Lymphedema Compression Garments - per CMS-1780-F, 42 CFR 410.36(a)(4)
+        const GARMENT_REQUIREMENTS = [
+            {
+                id: 'garment_dx_lymphedema',
+                text: 'Diagnosis is lymphedema (non-lymphedema diagnoses will result in denial as noncovered)',
+                citation: 'CMS-1780-F; 42 CFR 410.36(a)(4)',
+                severity: 'critical',
+                explanation: 'Compression garments are ONLY covered for the treatment of lymphedema under the 2024 rule. Other edema diagnoses are not covered.'
+            },
+            {
+                id: 'garment_treatment_use',
+                text: 'Item is for treatment of lymphedema (NOT surgical dressing use)',
+                citation: 'CMS-1780-F',
+                severity: 'critical',
+                explanation: 'If the garment is being used as a surgical dressing, different HCPCS codes apply (A6531, A6532, A6545).'
+            },
+            {
+                id: 'garment_pdac',
+                text: 'Product has PDAC coding verification for the billed HCPCS code',
+                citation: 'PDAC Requirements',
+                severity: 'critical',
+                explanation: 'The specific garment must be verified through PDAC to be correctly coded.'
+            },
+            {
+                id: 'garment_fda',
+                text: 'Product is FDA-registered',
+                citation: 'CMS-1780-F',
+                severity: 'critical',
+                explanation: 'Covered garments must be FDA-registered medical devices.'
+            },
+            {
+                id: 'garment_bilateral_modifiers',
+                text: 'If bilateral: RT and LT modifiers used on SEPARATE claim lines (1 UOS each) — NOT RTLT on single line',
+                citation: '42 CFR 410.36(a)(4)',
+                severity: 'warning',
+                explanation: 'Bilateral items must be billed on separate lines with the appropriate RT/LT modifier. Using RTLT on one line will cause processing errors.'
+            },
+            {
+                id: 'garment_nos_narrative',
+                text: 'If using NOS code (A6549, A6584, A6593, A6609): narrative includes item description, quantity per UOS, and supplier price',
+                citation: 'CMS Claims Processing Manual',
+                severity: 'critical',
+                explanation: 'NOS codes require additional documentation in the narrative field to describe the specific item.',
+                conditional: true,
+                appliesTo: ['A6549', 'A6584', 'A6593', 'A6609']
+            },
+            {
+                id: 'garment_replacement',
+                text: 'For replacements: documented medical necessity for replacement',
+                citation: '42 CFR 410.36(a)(4)',
+                severity: 'warning',
+                explanation: 'If this is a replacement garment, documentation should support why the replacement is needed.',
+                conditional: true
+            }
+        ];
+
+        // Therapeutic Diabetic Shoes - per LCD L33369 / Policy Article A52501
+        const DIABETIC_SHOE_UNIVERSAL = [
+            {
+                id: 'shoe_dx_diabetes',
+                text: 'Patient has documented diagnosis of diabetes mellitus (ICD-10: E08.xx-E13.xx)',
+                citation: 'LCD L33369',
+                severity: 'critical',
+                explanation: 'The diabetic shoe benefit requires a diagnosis of diabetes mellitus.'
+            },
+            {
+                id: 'shoe_certification',
+                text: 'Certifying physician (MD or DO managing diabetes — NOT a podiatrist) has certified IN WRITING within prior 12 months that patient has diabetes AND one or more qualifying conditions',
+                citation: 'LCD L33369; Policy Article A52501',
+                severity: 'critical',
+                explanation: 'A physician managing the diabetes (not a podiatrist) must certify the patient meets criteria. This certification is separate from the prescription.'
+            },
+            {
+                id: 'shoe_qualifying_condition',
+                text: 'Certification documents at least ONE of: previous amputation, history of foot ulceration, pre-ulcerative callus, peripheral neuropathy with callus, foot deformity, or poor circulation',
+                citation: 'LCD L33369',
+                severity: 'critical',
+                explanation: 'One of the six qualifying conditions must be certified by the MD/DO managing diabetes.'
+            },
+            {
+                id: 'shoe_prescriber',
+                text: 'Prescribing physician is a podiatrist or other qualified physician knowledgeable in fitting',
+                citation: 'LCD L33369',
+                severity: 'critical',
+                explanation: 'The prescriber must be qualified to assess proper fit. Often a podiatrist, but can be the same physician who certifies.'
+            },
+            {
+                id: 'shoe_kx_modifier',
+                text: 'KX modifier will be applied (attesting all coverage criteria met)',
+                citation: 'LCD L33369',
+                severity: 'critical',
+                explanation: 'The KX modifier is required and represents the supplier attestation that all coverage criteria are met.'
+            },
+            {
+                id: 'shoe_rt_lt',
+                text: 'RT and LT modifiers on separate claim lines, 1 UOS each',
+                citation: 'LCD L33369',
+                severity: 'warning',
+                explanation: 'Each shoe must be billed separately with the appropriate left/right modifier.'
+            },
+            {
+                id: 'shoe_fit_eval',
+                text: 'In-person evaluation by supplier at delivery: patient wearing shoes + inserts, documented proper fit',
+                citation: 'LCD L33369; Policy Article A52501',
+                severity: 'critical',
+                explanation: 'The supplier must document an in-person fitting evaluation at the time of delivery.'
+            },
+            {
+                id: 'shoe_benefit_limit',
+                text: 'Annual benefit limits verified not exceeded (A5500: 1 pair shoes + 3 pairs inserts; A5501: 1 pair custom shoes + 2 additional pairs inserts)',
+                citation: 'LCD L33369',
+                severity: 'critical',
+                explanation: 'Medicare covers a maximum per calendar year. Exceeding the limit will result in denial.'
+            },
+            {
+                id: 'shoe_no_deluxe',
+                text: 'No deluxe features (A5508) are being billed — these are NONCOVERED',
+                citation: 'LCD L33369',
+                severity: 'critical',
+                explanation: 'Deluxe features (A5508) are statutorily noncovered. If present, only the base item may be billed.'
+            }
+        ];
+
+        // A5501 (Custom Molded) Additional Requirements
+        const CUSTOM_SHOE_REQUIREMENTS = [
+            {
+                id: 'custom_shoe_justification',
+                text: 'Documentation that foot deformity CANNOT be accommodated by depth shoe (A5500)',
+                citation: 'LCD L33369',
+                severity: 'critical',
+                explanation: 'Custom molded shoes require documentation that a less costly depth shoe would not accommodate the deformity.'
+            },
+            {
+                id: 'custom_shoe_deformity_detail',
+                text: 'Detailed description of nature and severity of the foot deformity',
+                citation: 'LCD L33369',
+                severity: 'critical',
+                explanation: 'The medical record must describe the specific deformity and explain why it requires custom molding.'
+            },
+            {
+                id: 'custom_shoe_impressions',
+                text: 'Impressions, casts, or CAD/CAM images were obtained IN PERSON',
+                citation: 'LCD L33369',
+                severity: 'critical',
+                explanation: 'Custom molded shoes require in-person measurements/impressions. Remote/mail-order is not permitted.'
+            }
+        ];
+
+        // Custom Insert (A5513, A5514) Additional Requirements
+        const CUSTOM_INSERT_REQUIREMENTS = [
+            {
+                id: 'custom_insert_impressions',
+                text: 'Impressions, casts, or CAD/CAM images were obtained IN PERSON',
+                citation: 'LCD L33369',
+                severity: 'critical',
+                explanation: 'Custom inserts require in-person impressions. The patient must be physically present.'
+            }
+        ];
+
+        // ============================================================================
+        // APPLICATION STATE
+        // ============================================================================
+
+        let state = {
+            category: null,
+            hcpcsCode: null,
+            customCode: '',
+            indication: null,  // for PCD: 'lymphedema' or 'cvi'
+            dateOfService: null,
+            checkedItems: new Set(),
+            isLcdApplicable: false  // true if DOS before 11/14/2024
+        };
+
+        // ============================================================================
+        // UI FUNCTIONS
+        // ============================================================================
+
+        function selectCategory(category) {
+            state.category = category;
+            state.hcpcsCode = null;
+            state.indication = null;
+            state.checkedItems.clear();
+
+            // Update UI
+            document.querySelectorAll('.category-btn').forEach(btn => {
+                btn.classList.toggle('selected', btn.dataset.category === category);
+            });
+
+            // Show step 2
+            document.getElementById('step2').classList.remove('hidden');
+
+            // Populate HCPCS dropdown
+            const select = document.getElementById('hcpcsSelect');
+            select.innerHTML = '<option value="">— Select Code —</option>';
+            HCPCS_CODES[category].forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.code;
+                opt.textContent = `${item.code} — ${item.desc}`;
+                select.appendChild(opt);
+            });
+
+            // Show/hide PCD options
+            document.getElementById('pcdOptions').classList.toggle('hidden', category !== 'pcd');
+            document.getElementById('customCodeGroup').classList.add('hidden');
+            document.getElementById('e0652Notice').classList.add('hidden');
+
+            // Hide steps 3 and 4
+            document.getElementById('step3').classList.add('hidden');
+            document.getElementById('step4').classList.add('hidden');
+
+            // Reset indication radio buttons
+            document.querySelectorAll('input[name="indication"]').forEach(r => r.checked = false);
+            document.querySelectorAll('.radio-option').forEach(r => r.classList.remove('selected'));
+        }
+
+        function selectHCPCS() {
+            const code = document.getElementById('hcpcsSelect').value;
+            state.hcpcsCode = code;
+            state.checkedItems.clear();
+
+            // Handle "Other" option for garments
+            if (code === 'OTHER') {
+                document.getElementById('customCodeGroup').classList.remove('hidden');
+                state.hcpcsCode = state.customCode || null;
+            } else {
+                document.getElementById('customCodeGroup').classList.add('hidden');
+            }
+
+            // Show E0652 notice
+            document.getElementById('e0652Notice').classList.toggle('hidden', code !== 'E0652');
+
+            // For PCD, require indication before showing checklist
+            if (state.category === 'pcd') {
+                if (code && state.indication && state.dateOfService) {
+                    showChecklist();
+                } else {
+                    document.getElementById('step3').classList.add('hidden');
+                    document.getElementById('step4').classList.add('hidden');
+                }
+            } else if (code) {
+                showChecklist();
+            }
+        }
+
+        function updateCustomCode() {
+            state.customCode = document.getElementById('customCode').value.toUpperCase();
+            if (document.getElementById('hcpcsSelect').value === 'OTHER') {
+                state.hcpcsCode = state.customCode || null;
+                if (state.hcpcsCode) {
+                    showChecklist();
+                }
+            }
+        }
+
+        function selectIndication(indication) {
+            state.indication = indication;
+            state.checkedItems.clear();
+
+            // Update radio UI
+            document.querySelectorAll('.radio-option').forEach(opt => {
+                const radio = opt.querySelector('input[type="radio"]');
+                opt.classList.toggle('selected', radio.value === indication);
+                radio.checked = radio.value === indication;
+            });
+
+            // Check for E0652 + CVI (not covered)
+            if (indication === 'cvi' && state.hcpcsCode === 'E0652') {
+                alert('⚠️ E0652 is NOT covered for CVI — only for lymphedema. Select E0650 or E0651 for CVI.');
+            }
+
+            if (state.hcpcsCode && state.dateOfService) {
+                showChecklist();
+            }
+        }
+
+        function updateDateOfService() {
+            const dos = document.getElementById('dateOfService').value;
+            state.dateOfService = dos;
+
+            // Determine if LCD L33829 applies (before 11/14/2024)
+            const lcdRetireDate = new Date('2024-11-14');
+            const dosDate = new Date(dos);
+            state.isLcdApplicable = dosDate < lcdRetireDate;
+
+            // Show notice
+            const notice = document.getElementById('lcdNotice');
+            if (dos) {
+                notice.classList.remove('hidden');
+                if (state.isLcdApplicable) {
+                    notice.innerHTML = '<strong>LCD L33829 APPLIES</strong> — DOS is before 11/14/2024. LCD requirements in addition to NCD 280.6.';
+                    notice.classList.add('warning');
+                } else {
+                    notice.innerHTML = '<strong>NCD 280.6 ONLY</strong> — DOS is on or after 11/14/2024. LCD L33829 retired.';
+                    notice.classList.remove('warning');
+                }
+            } else {
+                notice.classList.add('hidden');
+            }
+
+            if (state.hcpcsCode && state.indication) {
+                showChecklist();
+            }
+        }
+
+        function showChecklist() {
+            const container = document.getElementById('checklistContainer');
+            container.innerHTML = '';
+
+            const requirements = getApplicableRequirements();
+
+            // Group by section
+            const sections = [
+                { id: 'universal', title: 'Universal DMEPOS Requirements', items: requirements.universal },
+                { id: 'condition', title: 'Condition-Specific Requirements', items: requirements.condition },
+                { id: 'billing', title: 'Billing & Modifiers', items: requirements.billing }
+            ];
+
+            sections.forEach(section => {
+                if (section.items.length === 0) return;
+
+                const sectionDiv = document.createElement('div');
+                sectionDiv.className = 'checklist-section';
+                sectionDiv.innerHTML = `<div class="checklist-section-title">${section.title}</div>`;
+
+                section.items.forEach(req => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = `checklist-item ${req.severity === 'critical' ? 'critical' : ''}`;
+
+                    const isRedFlag = req.isRedFlag;
+                    const checkboxType = isRedFlag ? 'checkbox' : 'checkbox';
+
+                    itemDiv.innerHTML = `
+                        <input type="${checkboxType}" id="${req.id}" onchange="updateResults()" ${isRedFlag ? 'data-redflag="true"' : ''}>
+                        <label for="${req.id}">
+                            <span class="item-text">${req.text}</span>
+                            <span class="item-citation">${req.citation}</span>
+                        </label>
+                    `;
+
+                    sectionDiv.appendChild(itemDiv);
+                });
+
+                container.appendChild(sectionDiv);
+            });
+
+            // Show steps 3 and 4
+            document.getElementById('step3').classList.remove('hidden');
+            document.getElementById('step4').classList.remove('hidden');
+
+            updateResults();
+        }
+
+        function getApplicableRequirements() {
+            const requirements = {
+                universal: [...UNIVERSAL_REQUIREMENTS],
+                condition: [],
+                billing: []
+            };
+
+            // Add F2F/WOPD for applicable items (PCDs are on the list)
+            if (state.category === 'pcd' && !state.hcpcsCode?.includes('E065')) {
+                // PCD base units are on WOPD list
+                requirements.universal.push(...F2F_WOPD_REQUIREMENTS);
+            }
+
+            // Category-specific requirements
+            if (state.category === 'pcd') {
+                if (state.indication === 'lymphedema') {
+                    requirements.condition.push(...PCD_LYMPHEDEMA_REQUIREMENTS);
+                    requirements.condition.push(CONSERVATIVE_IMPROVED_FLAG);
+
+                    if (state.hcpcsCode === 'E0652') {
+                        requirements.condition.push(...E0652_REQUIREMENTS);
+                    }
+                } else if (state.indication === 'cvi') {
+                    // E0652 not covered for CVI
+                    if (state.hcpcsCode === 'E0652') {
+                        requirements.condition.push({
+                            id: 'e0652_cvi_block',
+                            text: 'E0652 is NOT COVERED for CVI — must use E0650 or E0651',
+                            citation: 'NCD 280.6',
+                            severity: 'critical',
+                            explanation: 'E0652 (calibrated gradient) is only covered for lymphedema, never for CVI.',
+                            isRedFlag: true
+                        });
+                    }
+                    requirements.condition.push(...PCD_CVI_REQUIREMENTS);
+                }
+            } else if (state.category === 'garment') {
+                requirements.condition.push(...GARMENT_REQUIREMENTS.filter(r => {
+                    if (r.appliesTo) {
+                        return r.appliesTo.includes(state.hcpcsCode) ||
+                               (state.hcpcsCode?.startsWith('A65') && r.appliesTo.some(c => c.includes('NOS') || state.hcpcsCode === c));
+                    }
+                    return true;
+                }));
+            } else if (state.category === 'shoe') {
+                requirements.condition.push(...DIABETIC_SHOE_UNIVERSAL);
+
+                if (state.hcpcsCode === 'A5501') {
+                    requirements.condition.push(...CUSTOM_SHOE_REQUIREMENTS);
+                }
+                if (state.hcpcsCode === 'A5513' || state.hcpcsCode === 'A5514') {
+                    requirements.condition.push(...CUSTOM_INSERT_REQUIREMENTS);
+                }
+            }
+
+            return requirements;
+        }
+
+        function updateResults() {
+            const allRequirements = [
+                ...getApplicableRequirements().universal,
+                ...getApplicableRequirements().condition,
+                ...getApplicableRequirements().billing
+            ];
+
+            const missing = { critical: [], warning: [] };
+            let hasRedFlag = false;
+
+            allRequirements.forEach(req => {
+                const checkbox = document.getElementById(req.id);
+                if (!checkbox) return;
+
+                const isChecked = checkbox.checked;
+                const isRedFlag = checkbox.dataset.redflag === 'true';
+
+                if (isRedFlag && isChecked) {
+                    hasRedFlag = true;
+                    missing.critical.push({
+                        ...req,
+                        explanation: req.explanation + ' THIS IS A RED FLAG — checking this box indicates a disqualifying condition.'
+                    });
+                } else if (!isRedFlag && !isChecked) {
+                    if (req.severity === 'critical') {
+                        missing.critical.push(req);
+                    } else {
+                        missing.warning.push(req);
+                    }
+                }
+            });
+
+            // Determine overall status
+            let status, statusIcon, statusText, statusDesc;
+
+            if (hasRedFlag || missing.critical.length > 0) {
+                status = 'red';
+                statusIcon = '🛑';
+                statusText = 'INCOMPLETE — DO NOT SUBMIT';
+                statusDesc = hasRedFlag
+                    ? 'Red flag condition detected — claim will be denied'
+                    : `${missing.critical.length} critical item(s) missing`;
+            } else if (missing.warning.length > 0) {
+                status = 'yellow';
+                statusIcon = '⚠️';
+                statusText = 'WARNINGS — Audit Risk';
+                statusDesc = `${missing.warning.length} item(s) may cause audit issues`;
+            } else {
+                status = 'green';
+                statusIcon = '✅';
+                statusText = 'COMPLETE — Ready to Submit';
+                statusDesc = 'All required documentation verified';
+            }
+
+            // Update status banner
+            const banner = document.getElementById('statusBanner');
+            banner.className = `status-banner ${status}`;
+            banner.innerHTML = `
+                <div class="status-icon">${statusIcon}</div>
+                <div class="status-text">${statusText}</div>
+                <div class="status-desc">${statusDesc}</div>
+            `;
+
+            // Update missing list
+            const missingList = document.getElementById('missingList');
+            missingList.innerHTML = '';
+
+            [...missing.critical, ...missing.warning].forEach(item => {
+                const div = document.createElement('div');
+                div.className = `missing-item ${item.severity}`;
+                div.innerHTML = `
+                    <div class="severity">${item.severity === 'critical' ? '❌ CRITICAL — Will Be Denied' : '⚠️ WARNING — Audit Risk'}</div>
+                    <div>${item.text}</div>
+                    <div class="explanation">${item.explanation}</div>
+                    <div class="citation">Reference: ${item.citation}</div>
+                `;
+                missingList.appendChild(div);
+            });
+
+            // Update request notes
+            updateRequestNotes(missing);
+        }
+
+        function updateRequestNotes(missing) {
+            const allMissing = [...missing.critical, ...missing.warning];
+            const requestNotes = document.getElementById('requestNotes');
+            const content = document.getElementById('requestNotesContent');
+
+            if (allMissing.length === 0) {
+                requestNotes.classList.add('hidden');
+                return;
+            }
+
+            requestNotes.classList.remove('hidden');
+
+            const codeDisplay = state.hcpcsCode || 'N/A';
+            const indicationDisplay = state.indication ? ` (${state.indication === 'lymphedema' ? 'Lymphedema' : 'CVI with Venous Stasis Ulcers'})` : '';
+
+            let text = `REQUEST FOR ADDITIONAL DOCUMENTATION
+Midwest Compression — DME Order Review
+Date: ${new Date().toLocaleDateString()}
+
+RE: HCPCS ${codeDisplay}${indicationDisplay}
+
+The following documentation is required to complete this order:
+
+`;
+            allMissing.forEach((item, i) => {
+                text += `${i + 1}. ${item.text}\n   (${item.citation})\n\n`;
+            });
+
+            text += `Please fax the requested documentation to complete the patient's order.
+
+Thank you,
+Midwest Compression`;
+
+            content.textContent = text;
+        }
+
+        function copyRequestNotes() {
+            const content = document.getElementById('requestNotesContent').textContent;
+            navigator.clipboard.writeText(content).then(() => {
+                alert('Copied to clipboard!');
+            });
+        }
+
+        function resetAll() {
+            state = {
+                category: null,
+                hcpcsCode: null,
+                customCode: '',
+                indication: null,
+                dateOfService: null,
+                checkedItems: new Set(),
+                isLcdApplicable: false
+            };
+
+            document.querySelectorAll('.category-btn').forEach(btn => btn.classList.remove('selected'));
+            document.getElementById('step2').classList.add('hidden');
+            document.getElementById('step3').classList.add('hidden');
+            document.getElementById('step4').classList.add('hidden');
+            document.getElementById('hcpcsSelect').value = '';
+            document.getElementById('dateOfService').value = '';
+            document.getElementById('customCode').value = '';
+            document.querySelectorAll('input[name="indication"]').forEach(r => r.checked = false);
+            document.querySelectorAll('.radio-option').forEach(r => r.classList.remove('selected'));
+        }
+
+        function printResults() {
+            window.print();
+        }
+
+        // Initialize date field to today
+        document.addEventListener('DOMContentLoaded', () => {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('dateOfService').value = today;
+            initDropZone();
+        });
+
+        // ============================================================================
+        // PDF DRAG & DROP FUNCTIONALITY
+        // ============================================================================
+
+        let currentPdfUrl = null;
+        let currentPdfName = null;
+
+        function initDropZone() {
+            const dropZone = document.getElementById('dropZone');
+
+            // Prevent default drag behaviors on the whole window
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                document.body.addEventListener(eventName, preventDefaults, false);
+            });
+
+            // Highlight drop zone when dragging over it
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => {
+                    dropZone.classList.add('dragover');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => {
+                    dropZone.classList.remove('dragover');
+                }, false);
+            });
+
+            // Handle drop
+            dropZone.addEventListener('drop', handleDrop, false);
+        }
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        }
+
+        function handleFileSelect(e) {
+            const files = e.target.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        }
+
+        function handleFile(file) {
+            // Validate it's a PDF
+            if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+                alert('Please drop a PDF file. Other file types are not supported.');
+                return;
+            }
+
+            // Revoke old URL if exists
+            if (currentPdfUrl) {
+                URL.revokeObjectURL(currentPdfUrl);
+            }
+
+            // Create object URL for the PDF
+            currentPdfUrl = URL.createObjectURL(file);
+            currentPdfName = file.name;
+
+            // Show the viewer
+            displayPdf(currentPdfUrl, file.name);
+        }
+
+        function displayPdf(url, filename) {
+            const dropZone = document.getElementById('dropZone');
+            const viewer = document.getElementById('pdfViewer');
+            const frame = document.getElementById('pdfFrame');
+            const filenameEl = document.getElementById('pdfFilename');
+
+            // Hide drop zone, show viewer
+            dropZone.classList.add('hidden');
+            viewer.classList.remove('hidden');
+
+            // Set filename
+            filenameEl.textContent = filename;
+
+            // Load PDF in iframe
+            frame.src = url;
+        }
+
+        function openPdfNewTab() {
+            if (currentPdfUrl) {
+                window.open(currentPdfUrl, '_blank');
+            }
+        }
+
+        function closePdf() {
+            const dropZone = document.getElementById('dropZone');
+            const viewer = document.getElementById('pdfViewer');
+            const frame = document.getElementById('pdfFrame');
+
+            // Clear iframe
+            frame.src = '';
+
+            // Revoke URL
+            if (currentPdfUrl) {
+                URL.revokeObjectURL(currentPdfUrl);
+                currentPdfUrl = null;
+                currentPdfName = null;
+            }
+
+            // Show drop zone, hide viewer
+            viewer.classList.add('hidden');
+            dropZone.classList.remove('hidden');
+
+            // Reset file input
+            document.getElementById('fileInput').value = '';
+        }
+
+        // Also reset PDF on full reset
+        const originalResetAll = resetAll;
+        resetAll = function() {
+            originalResetAll();
+            closePdf();
+        };
+    </script>
+</body>
+</html>
