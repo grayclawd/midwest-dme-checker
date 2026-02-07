@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DME Order Completeness Checker — Midwest Compression</title>
+    <!-- PDF.js for text extraction -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
     <style>
         :root {
             --primary: #0d6eaa;
@@ -699,6 +704,80 @@
                 display: none !important;
             }
         }
+
+        /* AI Insights Panel */
+        .insights-panel {
+            background: var(--primary-light);
+            border: 2px solid var(--primary);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+
+        .insights-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 600;
+            color: var(--primary-dark);
+            margin-bottom: 0.75rem;
+        }
+
+        .insights-item {
+            background: white;
+            border-radius: 6px;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .insights-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .insights-item .icon {
+            margin-right: 0.5rem;
+        }
+
+        .insights-item.found {
+            border-left: 4px solid var(--success);
+        }
+
+        .insights-item.not-found {
+            border-left: 4px solid var(--gray-300);
+            opacity: 0.7;
+        }
+
+        .insights-item .detail {
+            font-size: 0.85rem;
+            color: var(--gray-600);
+            margin-top: 0.25rem;
+            font-family: monospace;
+        }
+
+        .processing-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            background: var(--gray-100);
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: var(--gray-600);
+        }
+
+        .spinner {
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid var(--gray-300);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -730,6 +809,13 @@
                         </div>
                     </div>
                     <iframe class="pdf-viewer-frame" id="pdfFrame"></iframe>
+                </div>
+                <!-- AI Insights Panel -->
+                <div class="insights-panel hidden" id="insightsPanel">
+                    <div class="insights-header">
+                        🤖 Auto-Detected Items
+                    </div>
+                    <div id="insightsContent"></div>
                 </div>
             </div>
         </div>
@@ -1784,6 +1870,9 @@ Midwest Compression`;
 
             // Show the viewer
             displayPdf(currentPdfUrl, file.name);
+
+            // Extract and analyze text
+            analyzePdfContent(file);
         }
 
         function displayPdf(url, filename) {
@@ -1809,10 +1898,276 @@ Midwest Compression`;
             }
         }
 
+        // ============================================================================
+        // PDF TEXT EXTRACTION & ANALYSIS
+        // ============================================================================
+
+        async function analyzePdfContent(file) {
+            const insightsPanel = document.getElementById('insightsPanel');
+            const insightsContent = document.getElementById('insightsContent');
+
+            // Show loading state
+            insightsPanel.classList.remove('hidden');
+            insightsContent.innerHTML = '<div class="processing-indicator"><div class="spinner"></div>Analyzing document...</div>';
+
+            try {
+                // Extract text from PDF
+                const text = await extractTextFromPdf(file);
+
+                // Analyze text for patterns
+                const findings = analyzeDocumentText(text);
+
+                // Display findings
+                displayFindings(findings);
+
+                // Auto-check boxes based on findings
+                autoCheckBoxes(findings);
+
+            } catch (error) {
+                console.error('Error analyzing PDF:', error);
+                insightsContent.innerHTML = '<div class="insights-item not-found">⚠️ Could not extract text from PDF (may be scanned image)</div>';
+            }
+        }
+
+        async function extractTextFromPdf(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+
+            let fullText = '';
+
+            // Extract text from each page
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(' ');
+                fullText += pageText + '\n';
+            }
+
+            return fullText;
+        }
+
+        function analyzeDocumentText(text) {
+            const findings = {
+                signature: null,
+                npi: null,
+                diagnosis: [],
+                dates: [],
+                conservativeTherapy: false,
+                measurements: false,
+                compression: false,
+                exercise: false,
+                elevation: false,
+                mld: false,
+                phoneNumbers: [],
+                faxNumbers: [],
+                patientInfo: null
+            };
+
+            // Signature patterns (MD, DO, DPM, NP, PA, CNS)
+            const sigPattern = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+),?\s*(M\.?D\.?|D\.?O\.?|DPM|NP|PA|CNS|APRN|FNP)/gi;
+            const sigMatches = text.match(sigPattern);
+            if (sigMatches && sigMatches.length > 0) {
+                findings.signature = sigMatches[0];
+            }
+
+            // NPI number (10 digits)
+            const npiPattern = /\b\d{10}\b/g;
+            const npiMatches = text.match(npiPattern);
+            if (npiMatches && npiMatches.length > 0) {
+                findings.npi = npiMatches[0];
+            }
+
+            // ICD-10 codes for lymphedema/edema
+            const icd10Pattern = /\b(I89\.\d{1,2}|I97\.2|I13\.\d{1,2}|R60\.\d{1,2}|E11\.6\d{1,2})\b/gi;
+            const icd10Matches = text.match(icd10Pattern);
+            if (icd10Matches) {
+                findings.diagnosis = [...new Set(icd10Matches)];
+            }
+
+            // Date patterns (MM/DD/YYYY, MM-DD-YYYY, Month DD, YYYY)
+            const datePattern = /\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b/g;
+            const dateMatches = text.match(datePattern);
+            if (dateMatches) {
+                findings.dates = [...new Set(dateMatches)].slice(0, 5); // Limit to 5 most recent
+            }
+
+            // Conservative therapy keywords
+            const conservativeTerms = [
+                'conservative therapy',
+                'conservative treatment',
+                'conservative management',
+                '4 week trial',
+                'four week trial',
+                'failed conservative'
+            ];
+            findings.conservativeTherapy = conservativeTerms.some(term =>
+                text.toLowerCase().includes(term)
+            );
+
+            // Compression therapy
+            const compressionTerms = ['compression', 'compression garment', 'compression bandage', '30 mmhg', '40 mmhg'];
+            findings.compression = compressionTerms.some(term =>
+                text.toLowerCase().includes(term)
+            );
+
+            // Exercise program
+            const exerciseTerms = ['exercise', 'physical therapy', 'range of motion', 'ambulation'];
+            findings.exercise = exerciseTerms.some(term =>
+                text.toLowerCase().includes(term)
+            );
+
+            // Elevation
+            const elevationTerms = ['elevation', 'elevate', 'leg elevation', 'limb elevation'];
+            findings.elevation = elevationTerms.some(term =>
+                text.toLowerCase().includes(term)
+            );
+
+            // MLD
+            const mldTerms = ['manual lymphatic drainage', 'mld', 'lymphatic massage'];
+            findings.mld = mldTerms.some(term =>
+                text.toLowerCase().includes(term)
+            );
+
+            // Measurements (circumference, volume, etc.)
+            const measurementTerms = ['circumference', 'measurement', 'volume', 'cm', 'centimeter'];
+            findings.measurements = measurementTerms.some(term =>
+                text.toLowerCase().includes(term)
+            ) || /\d+\s*(cm|centimeters?)/i.test(text);
+
+            // Phone numbers
+            const phonePattern = /\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/g;
+            const phoneMatches = text.match(phonePattern);
+            if (phoneMatches) {
+                findings.phoneNumbers = [...new Set(phoneMatches)].slice(0, 3);
+            }
+
+            // Fax numbers (look for "fax" near phone pattern)
+            const faxPattern = /fax\s*:?\s*(\d{3}[-.]?\d{3}[-.]?\d{4})/gi;
+            const faxMatches = [...text.matchAll(faxPattern)];
+            if (faxMatches.length > 0) {
+                findings.faxNumbers = faxMatches.map(m => m[1]);
+            }
+
+            return findings;
+        }
+
+        function displayFindings(findings) {
+            const insightsContent = document.getElementById('insightsContent');
+            let html = '';
+
+            // Signature
+            html += findings.signature
+                ? `<div class="insights-item found">✅ <strong>Signature Found:</strong> ${findings.signature}</div>`
+                : `<div class="insights-item not-found">⚪ No signature pattern detected</div>`;
+
+            // NPI
+            html += findings.npi
+                ? `<div class="insights-item found">✅ <strong>NPI Found:</strong> ${findings.npi}</div>`
+                : `<div class="insights-item not-found">⚪ No NPI number detected</div>`;
+
+            // Diagnosis
+            if (findings.diagnosis.length > 0) {
+                html += `<div class="insights-item found">✅ <strong>Diagnosis Code(s):</strong> ${findings.diagnosis.join(', ')}</div>`;
+            } else {
+                html += `<div class="insights-item not-found">⚪ No ICD-10 diagnosis codes detected</div>`;
+            }
+
+            // Conservative therapy
+            html += findings.conservativeTherapy
+                ? `<div class="insights-item found">✅ <strong>Conservative therapy mentioned</strong></div>`
+                : `<div class="insights-item not-found">⚪ No conservative therapy documentation found</div>`;
+
+            // Conservative components
+            if (findings.compression || findings.exercise || findings.elevation || findings.mld) {
+                let components = [];
+                if (findings.compression) components.push('Compression');
+                if (findings.exercise) components.push('Exercise');
+                if (findings.elevation) components.push('Elevation');
+                if (findings.mld) components.push('MLD');
+                html += `<div class="insights-item found">✅ <strong>Conservative components:</strong> ${components.join(', ')}</div>`;
+            }
+
+            // Measurements
+            html += findings.measurements
+                ? `<div class="insights-item found">✅ <strong>Measurements documented</strong></div>`
+                : `<div class="insights-item not-found">⚪ No measurement data detected</div>`;
+
+            // Dates
+            if (findings.dates.length > 0) {
+                html += `<div class="insights-item found">✅ <strong>Dates found:</strong> ${findings.dates.slice(0, 3).join(', ')}</div>`;
+            }
+
+            insightsContent.innerHTML = html;
+        }
+
+        function autoCheckBoxes(findings) {
+            // Only auto-check if we have a checklist visible
+            if (document.getElementById('step3').classList.contains('hidden')) {
+                return;
+            }
+
+            // Auto-check signature if found
+            if (findings.signature) {
+                const signedBox = document.getElementById('swo_signed');
+                const qualifiedBox = document.getElementById('swo_qualified');
+                if (signedBox && !signedBox.checked) {
+                    signedBox.checked = true;
+                }
+                if (qualifiedBox && !qualifiedBox.checked) {
+                    qualifiedBox.checked = true;
+                }
+            }
+
+            // Auto-check diagnosis if found
+            if (findings.diagnosis.length > 0) {
+                const dxBox = document.getElementById('dx_code');
+                const dxLymphedemaBox = document.getElementById('dx_lymphedema');
+                if (dxBox && !dxBox.checked) {
+                    dxBox.checked = true;
+                }
+                // Check if it's a lymphedema diagnosis code
+                const lymphedemaCodes = findings.diagnosis.filter(code => code.startsWith('I89'));
+                if (lymphedemaCodes.length > 0 && dxLymphedemaBox && !dxLymphedemaBox.checked) {
+                    dxLymphedemaBox.checked = true;
+                }
+            }
+
+            // Auto-check conservative therapy components
+            if (findings.compression) {
+                const box = document.getElementById('conservative_compression') ||
+                           document.getElementById('cvi_conservative_compression');
+                if (box && !box.checked) box.checked = true;
+            }
+            if (findings.exercise) {
+                const box = document.getElementById('conservative_exercise') ||
+                           document.getElementById('cvi_conservative_exercise');
+                if (box && !box.checked) box.checked = true;
+            }
+            if (findings.elevation) {
+                const box = document.getElementById('conservative_elevation') ||
+                           document.getElementById('cvi_conservative_elevation');
+                if (box && !box.checked) box.checked = true;
+            }
+            if (findings.mld) {
+                const box = document.getElementById('conservative_mld');
+                if (box && !box.checked) box.checked = true;
+            }
+
+            // Auto-check measurements if found
+            if (findings.measurements) {
+                const box = document.getElementById('measurements');
+                if (box && !box.checked) box.checked = true;
+            }
+
+            // Update results after auto-checking
+            updateResults();
+        }
+
         function closePdf() {
             const dropZone = document.getElementById('dropZone');
             const viewer = document.getElementById('pdfViewer');
             const frame = document.getElementById('pdfFrame');
+            const insightsPanel = document.getElementById('insightsPanel');
 
             // Clear iframe
             frame.src = '';
@@ -1824,8 +2179,9 @@ Midwest Compression`;
                 currentPdfName = null;
             }
 
-            // Show drop zone, hide viewer
+            // Show drop zone, hide viewer and insights
             viewer.classList.add('hidden');
+            insightsPanel.classList.add('hidden');
             dropZone.classList.remove('hidden');
 
             // Reset file input
