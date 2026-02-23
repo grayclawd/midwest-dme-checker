@@ -442,6 +442,96 @@
             display: none !important;
         }
 
+        /* Payor Selector */
+        .payor-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 0.75rem;
+        }
+
+        .payor-btn {
+            padding: 0.875rem 0.75rem;
+            border: 2px solid var(--gray-200);
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .payor-btn:hover {
+            border-color: var(--primary);
+            background: var(--primary-light);
+        }
+
+        .payor-btn.selected {
+            border-color: var(--primary);
+            background: var(--primary-light);
+            box-shadow: 0 0 0 3px rgba(13, 110, 170, 0.2);
+        }
+
+        .payor-btn .payor-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--gray-700);
+        }
+
+        .payor-btn .payor-type {
+            font-size: 0.75rem;
+            color: var(--gray-500);
+            margin-top: 0.2rem;
+        }
+
+        /* NO GO Banner */
+        .nogo-banner {
+            background: #1a0000;
+            border: 3px solid var(--danger);
+            border-radius: 8px;
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 1.5rem;
+            color: white;
+        }
+
+        .nogo-banner .nogo-title {
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: #ff4444;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+
+        .nogo-banner .nogo-body {
+            font-size: 0.95rem;
+            color: #ffcccc;
+            line-height: 1.6;
+        }
+
+        .nogo-banner .nogo-reason {
+            background: rgba(220, 53, 69, 0.2);
+            border-left: 4px solid var(--danger);
+            padding: 0.625rem 0.875rem;
+            border-radius: 0 4px 4px 0;
+            margin-top: 0.75rem;
+            font-size: 0.875rem;
+            color: #ffdddd;
+        }
+
+        /* Payor badge on checklist */
+        .payor-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            background: var(--primary);
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.2rem 0.65rem;
+            border-radius: 999px;
+            margin-left: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
         .inline-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -820,6 +910,48 @@
             </div>
         </div>
 
+        <!-- Step 0: Payor Selection -->
+        <div class="card">
+            <div class="card-header">
+                <span class="step-number">0</span>
+                Select Insurance Payor
+            </div>
+            <div class="card-body">
+                <div class="payor-grid">
+                    <button type="button" class="payor-btn" data-payor="medicare" onclick="selectPayor('medicare')">
+                        <div class="payor-name">Medicare / Medicaid</div>
+                        <div class="payor-type">NCD 280.6 · LCD L33369</div>
+                    </button>
+                    <button type="button" class="payor-btn" data-payor="bcbs_mi" onclick="selectPayor('bcbs_mi')">
+                        <div class="payor-name">BCBS of Michigan</div>
+                        <div class="payor-type">Commercial · Medicare Adv.</div>
+                    </button>
+                    <button type="button" class="payor-btn" data-payor="humana" onclick="selectPayor('humana')">
+                        <div class="payor-name">Humana</div>
+                        <div class="payor-type">Commercial · Policy HUM-0432</div>
+                    </button>
+                    <button type="button" class="payor-btn" data-payor="priority_health" onclick="selectPayor('priority_health')">
+                        <div class="payor-name">Priority Health</div>
+                        <div class="payor-type">DME Policy 91110-R19</div>
+                    </button>
+                    <button type="button" class="payor-btn" data-payor="uhc" onclick="selectPayor('uhc')">
+                        <div class="payor-name">United Healthcare</div>
+                        <div class="payor-type">Medicare Guidelines</div>
+                    </button>
+                    <button type="button" class="payor-btn" data-payor="other" onclick="selectPayor('other')">
+                        <div class="payor-name">Other / Unknown</div>
+                        <div class="payor-type">Defaults to Medicare</div>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- NO GO Banner (hidden by default) -->
+        <div class="nogo-banner hidden" id="noGoBanner">
+            <div class="nogo-title">⛔ NO GO — DO NOT PROCESS THIS ORDER</div>
+            <div class="nogo-body" id="noGoBody"></div>
+        </div>
+
         <!-- Step 1: Product Category -->
         <div class="card">
             <div class="card-header">
@@ -908,6 +1040,7 @@
                     <div class="card-header">
                         <span class="step-number">3</span>
                         Documentation Checklist
+                        <span class="payor-badge hidden" id="payorBadge"></span>
                     </div>
                     <div class="card-body" id="checklistContainer">
                         <!-- Dynamically populated -->
@@ -1390,10 +1523,171 @@
         ];
 
         // ============================================================================
+        // PAYOR-SPECIFIC REQUIREMENT SETS
+        // ============================================================================
+
+        // --- PRIORITY HEALTH ---
+
+        // Priority Health universal PCD additions (applies to all PCD indications)
+        const PH_PCD_UNIVERSAL = [
+            {
+                id: 'ph_interqual',
+                text: 'InterQual criteria documented and met for this PCD indication',
+                citation: 'Priority Health DME Policy 91110-R19, §I.13.a',
+                severity: 'critical',
+                explanation: 'Priority Health requires InterQual criteria to be met and documented. Attach or reference the InterQual criteria applicable to this specific case.'
+            },
+            {
+                id: 'ph_prior_auth',
+                text: 'Prior authorization obtained (required for all DME > $1,000)',
+                citation: 'Priority Health DME Policy 91110-R19, §I.10',
+                severity: 'critical',
+                explanation: 'Priority Health requires pre-authorization for DME items costing more than $1,000. PCDs routinely exceed this threshold. Do not deliver without PA on file.'
+            }
+        ];
+
+        // Priority Health explicit exclusion confirmations — staff checks these to CONFIRM exclusions are NOT present
+        const PH_PCD_EXCLUSION_CHECKS = [
+            {
+                id: 'ph_no_cellulitis',
+                text: 'CONFIRM: Active cellulitis is NOT present (would exclude PCD coverage)',
+                citation: 'Priority Health DME Policy 91110-R19, §I.13.b.i',
+                severity: 'critical',
+                explanation: 'Active cellulitis is an absolute exclusion for PCD coverage under Priority Health. Do not proceed if active cellulitis is documented.'
+            },
+            {
+                id: 'ph_no_ischemic_vascular',
+                text: 'CONFIRM: Ischemic vascular disease is NOT present (would exclude PCD coverage)',
+                citation: 'Priority Health DME Policy 91110-R19, §I.13.b.ii',
+                severity: 'critical',
+                explanation: 'Ischemic vascular disease explicitly excludes PCD coverage under Priority Health.'
+            },
+            {
+                id: 'ph_no_severe_neuropathy',
+                text: 'CONFIRM: Severe peripheral neuropathy is NOT present (would exclude PCD coverage)',
+                citation: 'Priority Health DME Policy 91110-R19, §I.13.b.v',
+                severity: 'critical',
+                explanation: 'Severe peripheral neuropathy is an explicit exclusion for PCD coverage under Priority Health.'
+            },
+            {
+                id: 'ph_not_head_neck_trunk_only',
+                text: 'CONFIRM: Lymphedema is NOT limited to head, neck, trunk, chest, or abdomen only — extremity involvement is required',
+                citation: 'Priority Health DME Policy 91110-R19, §I.13.b.iii',
+                severity: 'critical',
+                explanation: 'Priority Health explicitly excludes PCD coverage when lymphedema is confined to head, neck, trunk, chest, or abdomen. Must involve upper or lower extremities.'
+            }
+        ];
+
+        // Priority Health E0652 requirement (must fail E0651 first)
+        const PH_E0652_REQUIREMENTS = [
+            {
+                id: 'ph_e0652_ncg_failure',
+                text: 'Documented failure of non-calibrated device (E0651) — Priority Health requires failed E0651 trial BEFORE approving E0652',
+                citation: 'Priority Health DME Policy 91110-R19, §I.13.c',
+                severity: 'critical',
+                explanation: 'Priority Health states there is insufficient evidence of superiority of E0652 over E0651, so E0651 must be tried and have failed before E0652 is approved. The least costly equipment will be covered when quality and effectiveness are comparable.'
+            }
+        ];
+
+        // --- BCBS OF MICHIGAN ---
+
+        // BCBS of Michigan E0652 requirements (programmable pump)
+        const BCBS_E0652_REQUIREMENTS = [
+            {
+                id: 'bcbs_e0652_prior_pump_trial',
+                text: 'Documented FAILED prior trial of E0650 or E0651: at least 4 weeks of regular, daily, multiple-hour home usage after careful in-person fitting, training, and supervision',
+                citation: 'BCBS/BCN Joint Medical Policy — Compression Pumps and Appliances',
+                severity: 'critical',
+                explanation: 'BCBS requires a documented failed trial with a nonprogrammable pump before E0652 is approved. The trial must include in-person fitting, training, and supervised daily home usage for at least 4 weeks.'
+            },
+            {
+                id: 'bcbs_e0652_unique_chars',
+                text: 'Unique characteristics documented that prevent satisfactory treatment with nonprogrammable pump (e.g., significant scarring, contractures, highly sensitive skin)',
+                citation: 'BCBS/BCN Joint Medical Policy — Compression Pumps and Appliances',
+                severity: 'critical',
+                explanation: 'BCBS requires documentation of specific clinical features (scarring, contractures, etc.) that make E0650/E0651 ineffective for this patient.'
+            }
+        ];
+
+        // BCBS Medicare Advantage garment additions
+        const BCBS_MA_GARMENT_ADDITIONAL = [
+            {
+                id: 'bcbs_garment_freq_limits',
+                text: 'Quantity within BCBS MA frequency limits: A6530–A6538 = max 4 pairs per 12 months; A6539–A6541 = max 8 units per 12 months',
+                citation: 'BCBS Medicare Plus Blue Enhanced Benefit Policy — Compression Garments (Eff. 01/01/2026)',
+                severity: 'warning',
+                explanation: 'BCBS Medicare Advantage sets specific annual frequency limits. Verify the patient has not already exhausted their annual allowance before filling.'
+            },
+            {
+                id: 'bcbs_a6549_invoice',
+                text: 'If billing A6549 (NOS code): submit supplier invoice with claim — BCBS reimburses 35% above supplier invoice cost (not standard fee schedule)',
+                citation: 'BCBS Medicare Plus Blue Enhanced Benefit Policy — Compression Garments, Additional Billing Instructions',
+                severity: 'critical',
+                explanation: 'BCBS will deny A6549 claims submitted without the supplier invoice. Reimbursement is calculated as 35% above your supplier cost, not the standard DMEPOS fee schedule rate.'
+            }
+        ];
+
+        // --- HUMANA ---
+
+        // Humana prior authorization (universal for any lymphedema pump)
+        const HUMANA_PRIOR_AUTH_REQUIREMENT = {
+            id: 'humana_prior_auth',
+            text: 'Humana prior authorization obtained — initial approval is limited to a maximum of 90 days',
+            citation: 'Humana Policy HUM-0432-035, Effective 10/01/2024',
+            severity: 'critical',
+            explanation: 'Humana requires prior authorization for all lymphedema pumps. Initial authorization is capped at 90 days. Continued coverage requires submission of adherence records and clinical benefit confirmation from the prescribing provider.'
+        };
+
+        // Humana E0652-specific requirements (STRICTER than Medicare — trunk extension required)
+        const HUMANA_E0652_REQUIREMENTS = [
+            {
+                id: 'humana_e0652_prior_pump_trial',
+                text: 'Documented compliant 4-week trial with E0650 or E0651, with no improvement — adherence records must be submitted',
+                citation: 'Humana Policy HUM-0432-035',
+                severity: 'critical',
+                explanation: 'Humana requires a formal documented trial with E0650/E0651 before E0652 is approved. Submission of compliance/adherence documentation is required.'
+            },
+            {
+                id: 'humana_e0652_trunk_extension',
+                text: 'HUMANA-SPECIFIC REQUIREMENT: Lymphedema extends FROM the extremities ONTO the chest, abdomen, or trunk',
+                citation: 'Humana Policy HUM-0432-035',
+                severity: 'critical',
+                explanation: 'Humana ONLY covers E0652 when lymphedema has extended beyond the extremities into the trunk/chest/abdomen. This is MORE restrictive than Medicare (which requires "unique characteristics") and BCBS. If lymphedema is extremity-only, E0652 is NOT covered by Humana — use E0650/E0651.'
+            }
+        ];
+
+        // Humana compression garment requirements — Humana covers garments for lymphedema patients
+        // (Lymphedema Treatment Act principles apply; standard GARMENT_REQUIREMENTS used as base)
+        const HUMANA_GARMENT_REQUIREMENTS = [
+            {
+                id: 'humana_garment_lymphedema_dx',
+                text: 'Lymphedema ICD-10 diagnosis code is on the order and in the medical record (Humana covers garments for lymphedema treatment)',
+                citation: 'Humana Policy HUM-0432-035; Lymphedema Treatment Act (CAA 2023)',
+                severity: 'critical',
+                explanation: 'Humana commercial covers compression garments for lymphedema treatment. Ensure primary or secondary lymphedema ICD-10 codes (e.g., I89.0, Q82.0, I97.89) are clearly documented. Non-lymphedema edema diagnoses (CVI alone, CHF) are not covered.'
+            },
+            {
+                id: 'humana_garment_quantity',
+                text: 'Quantity within Humana limits: 2 sets INITIALLY per affected extremity; thereafter 1 set per extremity per rolling 12-month period',
+                citation: 'Humana Policy HUM-0432-035',
+                severity: 'warning',
+                explanation: 'Humana allows 2 sets initially per affected extremity, then 1 replacement set per rolling 12-month period. Sleeves and gloves are counted as separate items.'
+            },
+            {
+                id: 'humana_garment_pa',
+                text: 'Verify prior authorization requirements for garments on this specific Humana plan before dispensing',
+                citation: 'Humana Policy HUM-0432-035',
+                severity: 'warning',
+                explanation: 'Prior authorization requirements vary by specific Humana plan type. Call Humana to verify PA requirements before providing garments.'
+            }
+        ];
+
+        // ============================================================================
         // APPLICATION STATE
         // ============================================================================
 
         let state = {
+            payor: null,           // selected insurance payor
             category: null,
             hcpcsCode: null,
             customCode: '',
@@ -1403,9 +1697,75 @@
             isLcdApplicable: false  // true if DOS before 11/14/2024
         };
 
+        const PAYOR_LABELS = {
+            medicare: 'Medicare / Medicaid',
+            bcbs_mi: 'BCBS of Michigan',
+            humana: 'Humana',
+            priority_health: 'Priority Health',
+            uhc: 'United Healthcare',
+            other: 'Other / Unknown'
+        };
+
+        // Combinations where we DO NOT process the order (money-losing)
+        const NOGO_COMBOS = [
+            {
+                payor: 'uhc',
+                category: 'garment',
+                reason: 'United Healthcare garment orders are not profitable for Midwest Compression due to reimbursement rates below cost.',
+                action: 'Advise the patient to obtain their compression garment through another supplier. Do not submit this order.'
+            },
+            {
+                payor: 'priority_health',
+                category: 'garment',
+                reason: 'Priority Health garment orders are not profitable for Midwest Compression due to reimbursement rates below cost.',
+                action: 'Advise the patient to obtain their compression garment through another supplier. Do not submit this order.'
+            }
+        ];
+
         // ============================================================================
         // UI FUNCTIONS
         // ============================================================================
+
+        function selectPayor(payor) {
+            state.payor = payor;
+
+            // Update UI
+            document.querySelectorAll('.payor-btn').forEach(btn => {
+                btn.classList.toggle('selected', btn.dataset.payor === payor);
+            });
+
+            // Re-evaluate NO GO if category is already selected
+            if (state.category) {
+                checkNoGo();
+            }
+
+            // Refresh checklist if already showing
+            if (!document.getElementById('step3').classList.contains('hidden')) {
+                showChecklist();
+            }
+        }
+
+        function checkNoGo() {
+            const banner = document.getElementById('noGoBanner');
+            const body = document.getElementById('noGoBody');
+            const combo = NOGO_COMBOS.find(c => c.payor === state.payor && c.category === state.category);
+
+            if (combo) {
+                body.innerHTML = `
+                    <strong>${combo.reason}</strong>
+                    <div class="nogo-reason">⚡ Action Required: ${combo.action}</div>
+                `;
+                banner.classList.remove('hidden');
+                // Hide the remaining workflow steps
+                document.getElementById('step2').classList.add('hidden');
+                document.getElementById('step3').classList.add('hidden');
+                document.getElementById('step4').classList.add('hidden');
+                return true;
+            } else {
+                banner.classList.add('hidden');
+                return false;
+            }
+        }
 
         function selectCategory(category) {
             state.category = category;
@@ -1417,6 +1777,9 @@
             document.querySelectorAll('.category-btn').forEach(btn => {
                 btn.classList.toggle('selected', btn.dataset.category === category);
             });
+
+            // Check NO GO before proceeding
+            if (checkNoGo()) return;
 
             // Show step 2
             document.getElementById('step2').classList.remove('hidden');
@@ -1538,6 +1901,16 @@
             const container = document.getElementById('checklistContainer');
             container.innerHTML = '';
 
+            // Update payor badge
+            const badge = document.getElementById('payorBadge');
+            if (state.payor && state.payor !== 'medicare' && state.payor !== 'other') {
+                badge.textContent = PAYOR_LABELS[state.payor] + ' Rules';
+                badge.classList.remove('hidden');
+            } else {
+                badge.textContent = 'Medicare Rules';
+                badge.classList.remove('hidden');
+            }
+
             const requirements = getApplicableRequirements();
 
             // Group by section
@@ -1589,23 +1962,51 @@
                 billing: []
             };
 
-            // Add F2F/WOPD for applicable items (PCDs are on the list)
-            if (state.category === 'pcd' && !state.hcpcsCode?.includes('E065')) {
-                // PCD base units are on WOPD list
+            const payor = state.payor || 'medicare';
+
+            // Add F2F/WOPD for PCDs
+            if (state.category === 'pcd') {
                 requirements.universal.push(...F2F_WOPD_REQUIREMENTS);
             }
 
-            // Category-specific requirements
+            // ---- PCD ----
             if (state.category === 'pcd') {
+
+                // Priority Health: add InterQual + prior auth + exclusion checks universally
+                if (payor === 'priority_health') {
+                    requirements.universal.push(...PH_PCD_UNIVERSAL);
+                    requirements.universal.push(...PH_PCD_EXCLUSION_CHECKS);
+                }
+
+                // Humana: prior auth required for all pumps
+                if (payor === 'humana') {
+                    requirements.universal.push(HUMANA_PRIOR_AUTH_REQUIREMENT);
+                }
+
                 if (state.indication === 'lymphedema') {
+                    // Core lymphedema requirements — same across all payors (NCD 280.6 / InterQual mirrors this)
                     requirements.condition.push(...PCD_LYMPHEDEMA_REQUIREMENTS);
                     requirements.condition.push(CONSERVATIVE_IMPROVED_FLAG);
 
+                    // E0652 payor-specific requirements
                     if (state.hcpcsCode === 'E0652') {
-                        requirements.condition.push(...E0652_REQUIREMENTS);
+                        if (payor === 'bcbs_mi') {
+                            // BCBS: must document failed prior trial of E0650/E0651 + unique characteristics
+                            requirements.condition.push(...BCBS_E0652_REQUIREMENTS);
+                        } else if (payor === 'humana') {
+                            // Humana: failed E0650/E0651 trial PLUS lymphedema must extend to trunk/chest
+                            requirements.condition.push(...HUMANA_E0652_REQUIREMENTS);
+                        } else if (payor === 'priority_health') {
+                            // Priority Health: must document failure of E0651 first
+                            requirements.condition.push(...PH_E0652_REQUIREMENTS);
+                        } else {
+                            // Medicare/default: unique characteristics
+                            requirements.condition.push(...E0652_REQUIREMENTS);
+                        }
                     }
+
                 } else if (state.indication === 'cvi') {
-                    // E0652 not covered for CVI
+                    // E0652 not covered for CVI under any payor
                     if (state.hcpcsCode === 'E0652') {
                         requirements.condition.push({
                             id: 'e0652_cvi_block',
@@ -1618,15 +2019,73 @@
                     }
                     requirements.condition.push(...PCD_CVI_REQUIREMENTS);
                 }
+
+            // ---- GARMENT ----
             } else if (state.category === 'garment') {
-                requirements.condition.push(...GARMENT_REQUIREMENTS.filter(r => {
-                    if (r.appliesTo) {
-                        return r.appliesTo.includes(state.hcpcsCode) ||
-                               (state.hcpcsCode?.startsWith('A65') && r.appliesTo.some(c => c.includes('NOS') || state.hcpcsCode === c));
+
+                if (payor === 'humana') {
+                    // Humana: start with standard LTA-based garment requirements, then add Humana-specific items
+                    requirements.condition.push(...GARMENT_REQUIREMENTS.filter(r => {
+                        if (r.appliesTo) return r.appliesTo.includes(state.hcpcsCode);
+                        return true;
+                    }));
+                    requirements.condition.push(...HUMANA_GARMENT_REQUIREMENTS);
+
+                    // Code-specific Humana gap checks
+                    // A6567 is explicitly Not Covered per HUM-0432-035 coding table.
+                    // 2024 CAA wrap codes (A6583-A6586) and other new codes are absent from Humana's coding table —
+                    // Humana does cover lymphedema garments but these codes need PA verification before dispensing.
+                    const HUMANA_NOT_COVERED = ['A6567'];
+                    const HUMANA_WRAP_CODES = ['A6583', 'A6584', 'A6585', 'A6586'];
+                    const HUMANA_EXPLICIT_COVERED = ['A6549'];
+
+                    if (state.hcpcsCode && HUMANA_NOT_COVERED.includes(state.hcpcsCode)) {
+                        requirements.condition.push({
+                            id: 'humana_a6567_not_covered',
+                            text: 'A6567 (neck/head garment) is explicitly NOT COVERED by Humana — do not submit',
+                            citation: 'Humana Policy HUM-0432-035 — Coding Information',
+                            severity: 'critical',
+                            explanation: 'Humana Policy HUM-0432-035 explicitly lists A6567 as Not Covered in the coding table. Do not submit this code to Humana.',
+                            isRedFlag: true
+                        });
+                    } else if (state.hcpcsCode && HUMANA_WRAP_CODES.includes(state.hcpcsCode)) {
+                        requirements.condition.push({
+                            id: 'humana_wrap_policy_gap',
+                            text: `${state.hcpcsCode} (adjustable wrap) is not listed in Humana's coding table — obtain prior authorization before dispensing`,
+                            citation: 'Humana Policy HUM-0432-035 (Effective 10/01/2024)',
+                            severity: 'warning',
+                            explanation: 'Humana covers compression garments for lymphedema, but Policy HUM-0432-035 does not explicitly list 2024 CAA wrap codes (A6583-A6586) in its coding table. Call Humana to confirm coverage and obtain prior authorization before dispensing to avoid a denial.'
+                        });
+                    } else if (state.hcpcsCode && !HUMANA_EXPLICIT_COVERED.includes(state.hcpcsCode) && !HUMANA_NOT_COVERED.includes(state.hcpcsCode) && state.hcpcsCode.startsWith('A6')) {
+                        requirements.condition.push({
+                            id: 'humana_code_policy_gap',
+                            text: `${state.hcpcsCode} is not explicitly listed in Humana Policy HUM-0432-035 — verify with Humana before filling`,
+                            citation: 'Humana Policy HUM-0432-035 (Effective 10/01/2024)',
+                            severity: 'warning',
+                            explanation: 'Humana covers lymphedema garments, but this code is absent from the HUM-0432-035 coding table (which was written before 2024 CAA codes existed). Call Humana to confirm coverage and whether prior authorization is needed for this specific code.'
+                        });
                     }
-                    return true;
-                }));
+                } else {
+                    // Medicare / BCBS MA / default: standard garment requirements
+                    requirements.condition.push(...GARMENT_REQUIREMENTS.filter(r => {
+                        if (r.appliesTo) {
+                            return r.appliesTo.includes(state.hcpcsCode) ||
+                                   (state.hcpcsCode?.startsWith('A65') && r.appliesTo.some(c => c.includes('NOS') || state.hcpcsCode === c));
+                        }
+                        return true;
+                    }));
+                    // BCBS MA: additional frequency limits and A6549 invoice requirement
+                    if (payor === 'bcbs_mi') {
+                        requirements.condition.push(...BCBS_MA_GARMENT_ADDITIONAL.filter(r => {
+                            if (r.appliesTo) return r.appliesTo.includes(state.hcpcsCode);
+                            return true;
+                        }));
+                    }
+                }
+
+            // ---- DIABETIC SHOES ----
             } else if (state.category === 'shoe') {
+                // All payors use Medicare LCD L33369 guidelines for diabetic shoes
                 requirements.condition.push(...DIABETIC_SHOE_UNIVERSAL);
 
                 if (state.hcpcsCode === 'A5501') {
@@ -1737,10 +2196,12 @@
 
             const codeDisplay = state.hcpcsCode || 'N/A';
             const indicationDisplay = state.indication ? ` (${state.indication === 'lymphedema' ? 'Lymphedema' : 'CVI with Venous Stasis Ulcers'})` : '';
+            const payorDisplay = state.payor ? PAYOR_LABELS[state.payor] : 'Medicare';
 
             let text = `REQUEST FOR ADDITIONAL DOCUMENTATION
 Midwest Compression — DME Order Review
 Date: ${new Date().toLocaleDateString()}
+Insurance: ${payorDisplay}
 
 RE: HCPCS ${codeDisplay}${indicationDisplay}
 
@@ -1768,6 +2229,7 @@ Midwest Compression`;
 
         function resetAll() {
             state = {
+                payor: null,
                 category: null,
                 hcpcsCode: null,
                 customCode: '',
@@ -1777,7 +2239,9 @@ Midwest Compression`;
                 isLcdApplicable: false
             };
 
+            document.querySelectorAll('.payor-btn').forEach(btn => btn.classList.remove('selected'));
             document.querySelectorAll('.category-btn').forEach(btn => btn.classList.remove('selected'));
+            document.getElementById('noGoBanner').classList.add('hidden');
             document.getElementById('step2').classList.add('hidden');
             document.getElementById('step3').classList.add('hidden');
             document.getElementById('step4').classList.add('hidden');
@@ -1786,6 +2250,8 @@ Midwest Compression`;
             document.getElementById('customCode').value = '';
             document.querySelectorAll('input[name="indication"]').forEach(r => r.checked = false);
             document.querySelectorAll('.radio-option').forEach(r => r.classList.remove('selected'));
+            const badge = document.getElementById('payorBadge');
+            badge.classList.add('hidden');
         }
 
         function printResults() {
