@@ -271,6 +271,26 @@
             margin-bottom: 0.2rem;
         }
 
+        .auto-badge {
+            display: inline-block;
+            font-size: 0.65rem;
+            font-weight: 600;
+            color: var(--primary);
+            background: rgba(13, 110, 170, 0.1);
+            border-radius: 3px;
+            padding: 0.05rem 0.35rem;
+            margin-left: 0.4rem;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+
+        .auto-check-summary {
+            font-weight: 700;
+            border-bottom: 1px solid rgba(0,0,0,0.08);
+            padding-bottom: 0.5rem;
+            margin-bottom: 0.25rem;
+        }
+
         .results-panel {
             position: sticky;
             top: 1rem;
@@ -2415,11 +2435,9 @@ Midwest Compression`;
                 // Analyze text for patterns
                 const findings = analyzeDocumentText(text);
 
-                // Display findings
-                displayFindings(findings);
-
-                // Auto-check boxes based on findings
-                autoCheckBoxes(findings);
+                // Auto-check boxes first (returns count), then display findings with count
+                const autoCheckedCount = autoCheckBoxes(findings);
+                displayFindings(findings, autoCheckedCount);
 
             } catch (error) {
                 console.error('Error analyzing PDF:', error);
@@ -2445,144 +2463,199 @@ Midwest Compression`;
         }
 
         function analyzeDocumentText(text) {
+            const lower = text.toLowerCase();
+
             const findings = {
+                // Identity / order fields
                 signature: null,
                 npi: null,
                 diagnosis: [],
                 dates: [],
+                hcpcsCodesFound: [],
+                hasOrderFields: false,
+                // Clinical documentation
                 conservativeTherapy: false,
+                conservativeTrialFailed: false,
+                physicianDetermination: false,
+                patientCompliant: false,
                 measurements: false,
                 compression: false,
                 exercise: false,
                 elevation: false,
                 mld: false,
+                faceToFace: false,
+                deviceResponse: false,
+                uniqueCharacteristics: false,
+                // Contact info
                 phoneNumbers: [],
-                faxNumbers: [],
-                patientInfo: null
+                faxNumbers: []
             };
 
-            // Signature patterns (MD, DO, DPM, NP, PA, CNS)
-            const sigPattern = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+),?\s*(M\.?D\.?|D\.?O\.?|DPM|NP|PA|CNS|APRN|FNP)/gi;
+            // Signature: Name followed by credential
+            const sigPattern = /([A-Z][a-z]+(?:\s+[A-Z][\w\-]+)+),?\s*(M\.?D\.?|D\.?O\.?|DPM|NP|PA-?C?|CNS|APRN|FNP|CRNP)/gi;
             const sigMatches = text.match(sigPattern);
-            if (sigMatches && sigMatches.length > 0) {
-                findings.signature = sigMatches[0];
-            }
+            if (sigMatches) findings.signature = sigMatches[0];
 
-            // NPI number (10 digits)
-            const npiPattern = /\b\d{10}\b/g;
-            const npiMatches = text.match(npiPattern);
-            if (npiMatches && npiMatches.length > 0) {
-                findings.npi = npiMatches[0];
-            }
+            // NPI (10 consecutive digits, not part of a longer number)
+            const npiMatches = text.match(/(?<!\d)\d{10}(?!\d)/g);
+            if (npiMatches) findings.npi = npiMatches[0];
 
-            // ICD-10 codes for lymphedema/edema
-            const icd10Pattern = /\b(I89\.\d{1,2}|I97\.2|I13\.\d{1,2}|R60\.\d{1,2}|E11\.6\d{1,2})\b/gi;
+            // ICD-10 codes relevant to DME (lymphedema, edema, diabetes, foot)
+            const icd10Pattern = /\b(I89\.\d{1,2}|I97\.\d{1,2}|I13\.\d{1,2}|R60\.\d{1,2}|E1[0-3]\.\d{1,3}|M79\.\d{1,3}|L[0-9]{2}\.\d{1,2})\b/gi;
             const icd10Matches = text.match(icd10Pattern);
-            if (icd10Matches) {
-                findings.diagnosis = [...new Set(icd10Matches)];
-            }
+            if (icd10Matches) findings.diagnosis = [...new Set(icd10Matches)];
 
-            // Date patterns (MM/DD/YYYY, MM-DD-YYYY, Month DD, YYYY)
-            const datePattern = /\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b/g;
-            const dateMatches = text.match(datePattern);
-            if (dateMatches) {
-                findings.dates = [...new Set(dateMatches)].slice(0, 5); // Limit to 5 most recent
-            }
+            // Dates
+            const dateMatches = text.match(/\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b/g);
+            if (dateMatches) findings.dates = [...new Set(dateMatches)].slice(0, 5);
 
-            // Conservative therapy keywords
-            const conservativeTerms = [
-                'conservative therapy',
-                'conservative treatment',
-                'conservative management',
-                '4 week trial',
-                'four week trial',
-                'failed conservative'
-            ];
-            findings.conservativeTherapy = conservativeTerms.some(term =>
-                text.toLowerCase().includes(term)
-            );
+            // HCPCS codes (E06xx pumps, E07xx sleeves, A5xxx shoes, A6xxx garments)
+            const hcpcsMatches = text.match(/\b(E0[5-9]\d{2}|A[56]\d{3}|K0[0-9]\d{2})\b/gi);
+            if (hcpcsMatches) findings.hcpcsCodesFound = [...new Set(hcpcsMatches.map(c => c.toUpperCase()))];
 
-            // Compression therapy
-            const compressionTerms = ['compression', 'compression garment', 'compression bandage', '30 mmhg', '40 mmhg'];
-            findings.compression = compressionTerms.some(term =>
-                text.toLowerCase().includes(term)
-            );
+            // SWO completeness: signature + NPI + diagnosis code + date + HCPCS code all present
+            findings.hasOrderFields = !!(findings.signature && findings.npi &&
+                findings.diagnosis.length > 0 && findings.dates.length > 0 &&
+                findings.hcpcsCodesFound.length > 0);
 
-            // Exercise program
-            const exerciseTerms = ['exercise', 'physical therapy', 'range of motion', 'ambulation'];
-            findings.exercise = exerciseTerms.some(term =>
-                text.toLowerCase().includes(term)
-            );
+            // Face-to-face encounter
+            findings.faceToFace = [
+                'face-to-face', 'face to face', 'f2f', 'progress note',
+                'encounter date', 'office visit', 'in-person'
+            ].some(t => lower.includes(t));
 
-            // Elevation
-            const elevationTerms = ['elevation', 'elevate', 'leg elevation', 'limb elevation'];
-            findings.elevation = elevationTerms.some(term =>
-                text.toLowerCase().includes(term)
-            );
+            // Conservative therapy — general mention
+            findings.conservativeTherapy = [
+                'conservative therapy', 'conservative treatment',
+                '4 week trial', 'four week trial', 'failed conservative'
+            ].some(t => lower.includes(t));
 
-            // MLD
-            const mldTerms = ['manual lymphatic drainage', 'mld', 'lymphatic massage'];
-            findings.mld = mldTerms.some(term =>
-                text.toLowerCase().includes(term)
-            );
+            // Conservative therapy FAILED / unresponsive — strong signal for trial completion
+            findings.conservativeTrialFailed = [
+                'failed conservative', 'failed response to conservative',
+                'unresponsive to', 'has been unresponsive', 'demonstrated failed',
+                'inadequate response', 'no significant improvement',
+                'continues to persist', 'lymphedema is chronic',
+                'symptoms remain', 'failed response'
+            ].some(t => lower.includes(t));
 
-            // Measurements (circumference, volume, etc.)
-            const measurementTerms = ['circumference', 'measurement', 'volume', 'cm', 'centimeter'];
-            findings.measurements = measurementTerms.some(term =>
-                text.toLowerCase().includes(term)
-            ) || /\d+\s*(cm|centimeters?)/i.test(text);
+            // Physician determination (failed trial documented by provider)
+            findings.physicianDetermination = findings.conservativeTrialFailed ||
+                lower.includes('significant symptoms remain') ||
+                lower.includes('lymphedema has been unresponsive') ||
+                lower.includes('at-home pneumatic compression treatment is needed');
 
-            // Phone numbers
-            const phonePattern = /\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/g;
-            const phoneMatches = text.match(phonePattern);
-            if (phoneMatches) {
-                findings.phoneNumbers = [...new Set(phoneMatches)].slice(0, 3);
-            }
+            // Patient compliance documented
+            findings.patientCompliant = [
+                'patient was compliant', 'compliant with', 'patient compliance',
+                'has completed at least', 'has completed the trial',
+                'has undergone a four-week', 'has undergone a 4-week',
+                'completed the trial', 'underwent a four-week', 'underwent a 4-week'
+            ].some(t => lower.includes(t));
 
-            // Fax numbers (look for "fax" near phone pattern)
-            const faxPattern = /fax\s*:?\s*(\d{3}[-.]?\d{3}[-.]?\d{4})/gi;
-            const faxMatches = [...text.matchAll(faxPattern)];
-            if (faxMatches.length > 0) {
-                findings.faxNumbers = faxMatches.map(m => m[1]);
-            }
+            // Device / pump trial response
+            findings.deviceResponse = [
+                'trial was successful', 'pump trial was successful',
+                'trial with the e0652', 'responded well', 'positive response to',
+                'response to initial treatment', 'beneficial response'
+            ].some(t => lower.includes(t));
+
+            // Unique characteristics (E0652 justification)
+            findings.uniqueCharacteristics =
+                lower.includes('unique characteristics') ||
+                lower.includes('requires a calibrated') ||
+                lower.includes('fibrosis at the treatment site') ||
+                lower.includes('skin sensitivit') ||
+                (lower.includes('fibrosis') && lower.includes('lymphedema'));
+
+            // Conservative components
+            findings.compression = ['compression', '30 mmhg', '40 mmhg', 'compression garment', 'compression bandage'].some(t => lower.includes(t));
+            findings.exercise    = ['exercise', 'physical therapy', 'range of motion', 'ambulation'].some(t => lower.includes(t));
+            findings.elevation   = ['elevation', 'elevate', 'leg elevation', 'limb elevation'].some(t => lower.includes(t));
+            findings.mld         = ['manual lymphatic drainage', ' mld ', 'lymphatic massage'].some(t => lower.includes(t));
+
+            // Measurements
+            findings.measurements = ['circumference', 'measurement', 'volume'].some(t => lower.includes(t)) ||
+                /\d+\s*(cm|centimeters?)/i.test(text);
+
+            // Phone / fax
+            const phoneMatches = text.match(/\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/g);
+            if (phoneMatches) findings.phoneNumbers = [...new Set(phoneMatches)].slice(0, 3);
+
+            const faxMatches = [...text.matchAll(/fax\s*:?\s*(\d{3}[-.]?\d{3}[-.]?\d{4})/gi)];
+            if (faxMatches.length > 0) findings.faxNumbers = faxMatches.map(m => m[1]);
 
             return findings;
         }
 
-        function displayFindings(findings) {
+        function displayFindings(findings, autoCheckedCount) {
             const insightsContent = document.getElementById('insightsContent');
             let html = '';
 
+            // Auto-check summary at top
+            if (autoCheckedCount > 0) {
+                html += `<div class="insights-item found auto-check-summary">✅ ${autoCheckedCount} item${autoCheckedCount !== 1 ? 's' : ''} auto-checked — verify each before submitting</div>`;
+            }
+
             // Signature
             html += findings.signature
-                ? `<div class="insights-item found">✅ <strong>Signature Found:</strong> ${findings.signature}</div>`
-                : `<div class="insights-item not-found">⚪ No signature pattern detected</div>`;
+                ? `<div class="insights-item found">✅ <strong>Signature:</strong> ${findings.signature}</div>`
+                : `<div class="insights-item not-found">⚪ No signature detected</div>`;
 
             // NPI
             html += findings.npi
-                ? `<div class="insights-item found">✅ <strong>NPI Found:</strong> ${findings.npi}</div>`
-                : `<div class="insights-item not-found">⚪ No NPI number detected</div>`;
+                ? `<div class="insights-item found">✅ <strong>NPI:</strong> ${findings.npi}</div>`
+                : `<div class="insights-item not-found">⚪ No NPI detected</div>`;
 
             // Diagnosis
             if (findings.diagnosis.length > 0) {
-                html += `<div class="insights-item found">✅ <strong>Diagnosis Code(s):</strong> ${findings.diagnosis.join(', ')}</div>`;
+                html += `<div class="insights-item found">✅ <strong>Diagnosis:</strong> ${findings.diagnosis.join(', ')}</div>`;
             } else {
-                html += `<div class="insights-item not-found">⚪ No ICD-10 diagnosis codes detected</div>`;
+                html += `<div class="insights-item not-found">⚪ No ICD-10 codes detected</div>`;
             }
 
-            // Conservative therapy
-            html += findings.conservativeTherapy
-                ? `<div class="insights-item found">✅ <strong>Conservative therapy mentioned</strong></div>`
-                : `<div class="insights-item not-found">⚪ No conservative therapy documentation found</div>`;
+            // HCPCS codes found
+            if (findings.hcpcsCodesFound.length > 0) {
+                html += `<div class="insights-item found">✅ <strong>HCPCS codes:</strong> ${findings.hcpcsCodesFound.join(', ')}</div>`;
+            }
+
+            // Face-to-face
+            html += findings.faceToFace
+                ? `<div class="insights-item found">✅ <strong>Face-to-face encounter documented</strong></div>`
+                : `<div class="insights-item not-found">⚪ No F2F encounter detected</div>`;
+
+            // Conservative therapy — show failed/unresponsive if found, else general mention
+            if (findings.conservativeTrialFailed) {
+                html += `<div class="insights-item found">✅ <strong>Conservative trial: failed/unresponsive documented</strong></div>`;
+            } else if (findings.conservativeTherapy) {
+                html += `<div class="insights-item found">✅ <strong>Conservative therapy mentioned</strong> (failure language not detected — verify)</div>`;
+            } else {
+                html += `<div class="insights-item not-found">⚪ No conservative therapy documentation detected</div>`;
+            }
 
             // Conservative components
-            if (findings.compression || findings.exercise || findings.elevation || findings.mld) {
-                let components = [];
-                if (findings.compression) components.push('Compression');
-                if (findings.exercise) components.push('Exercise');
-                if (findings.elevation) components.push('Elevation');
-                if (findings.mld) components.push('MLD');
+            const components = [];
+            if (findings.compression) components.push('Compression');
+            if (findings.exercise)    components.push('Exercise');
+            if (findings.elevation)   components.push('Elevation');
+            if (findings.mld)         components.push('MLD');
+            if (components.length > 0) {
                 html += `<div class="insights-item found">✅ <strong>Conservative components:</strong> ${components.join(', ')}</div>`;
+            }
+
+            // Patient compliance
+            if (findings.patientCompliant) {
+                html += `<div class="insights-item found">✅ <strong>Patient compliance documented</strong></div>`;
+            }
+
+            // Device trial response
+            if (findings.deviceResponse) {
+                html += `<div class="insights-item found">✅ <strong>Device trial response documented</strong></div>`;
+            }
+
+            // Unique characteristics
+            if (findings.uniqueCharacteristics) {
+                html += `<div class="insights-item found">✅ <strong>Unique characteristics documented (E0652)</strong></div>`;
             }
 
             // Measurements
@@ -2592,73 +2665,95 @@ Midwest Compression`;
 
             // Dates
             if (findings.dates.length > 0) {
-                html += `<div class="insights-item found">✅ <strong>Dates found:</strong> ${findings.dates.slice(0, 3).join(', ')}</div>`;
+                html += `<div class="insights-item found">✅ <strong>Dates:</strong> ${findings.dates.slice(0, 3).join(', ')}</div>`;
             }
 
             insightsContent.innerHTML = html;
         }
 
         function autoCheckBoxes(findings) {
-            // Only auto-check if we have a checklist visible
-            if (document.getElementById('step3').classList.contains('hidden')) {
-                return;
+            if (document.getElementById('step3').classList.contains('hidden')) return 0;
+
+            let count = 0;
+
+            function tryCheck(id) {
+                const box = document.getElementById(id);
+                if (!box || box.checked || box.dataset.redflag) return;
+                box.checked = true;
+                // Badge: append to the item-text span so it sits inline with the label
+                const itemText = box.closest('.checklist-item')?.querySelector('.item-text');
+                if (itemText && !itemText.querySelector('.auto-badge')) {
+                    const badge = document.createElement('span');
+                    badge.className = 'auto-badge';
+                    badge.textContent = '📄 auto-detected';
+                    itemText.appendChild(badge);
+                }
+                count++;
             }
 
-            // Auto-check signature if found
+            // SWO completeness: all key fields present
+            if (findings.hasOrderFields) tryCheck('swo_on_file');
+
+            // Signature → signed + qualified practitioner
             if (findings.signature) {
-                const signedBox = document.getElementById('swo_signed');
-                const qualifiedBox = document.getElementById('swo_qualified');
-                if (signedBox && !signedBox.checked) {
-                    signedBox.checked = true;
-                }
-                if (qualifiedBox && !qualifiedBox.checked) {
-                    qualifiedBox.checked = true;
-                }
+                tryCheck('swo_signed');
+                tryCheck('swo_qualified');
             }
 
-            // Auto-check diagnosis if found
-            if (findings.diagnosis.length > 0) {
-                const dxBox = document.getElementById('dx_code');
-                const dxLymphedemaBox = document.getElementById('dx_lymphedema');
-                if (dxBox && !dxBox.checked) {
-                    dxBox.checked = true;
-                }
-                // Check if it's a lymphedema diagnosis code
-                const lymphedemaCodes = findings.diagnosis.filter(code => code.startsWith('I89'));
-                if (lymphedemaCodes.length > 0 && dxLymphedemaBox && !dxLymphedemaBox.checked) {
-                    dxLymphedemaBox.checked = true;
-                }
+            // Diagnosis codes
+            if (findings.diagnosis.length > 0) tryCheck('dx_code');
+            const hasLymphedema = findings.diagnosis.some(c => c.toUpperCase().startsWith('I89'));
+            if (hasLymphedema) {
+                tryCheck('dx_lymphedema');
+                tryCheck('garment_dx_lymphedema');
+                tryCheck('humana_garment_lymphedema_dx');
+                tryCheck('garment_treatment_use'); // lymphedema dx = treatment, not surgical dressing
             }
 
-            // Auto-check conservative therapy components
+            // Face-to-face encounter
+            if (findings.faceToFace) tryCheck('f2f_encounter');
+
+            // Conservative trial documented as failed/unresponsive
+            if (findings.conservativeTrialFailed) tryCheck('conservative_trial_4wk');
+
+            // Physician determination of failure
+            if (findings.physicianDetermination) tryCheck('physician_determination');
+
+            // Patient compliance documented
+            if (findings.patientCompliant) {
+                tryCheck('patient_compliant');
+                tryCheck('cvi_patient_compliant');
+            }
+
+            // Conservative therapy components
             if (findings.compression) {
-                const box = document.getElementById('conservative_compression') ||
-                           document.getElementById('cvi_conservative_compression');
-                if (box && !box.checked) box.checked = true;
+                tryCheck('conservative_compression');
+                tryCheck('cvi_conservative_compression');
             }
             if (findings.exercise) {
-                const box = document.getElementById('conservative_exercise') ||
-                           document.getElementById('cvi_conservative_exercise');
-                if (box && !box.checked) box.checked = true;
+                tryCheck('conservative_exercise');
+                tryCheck('cvi_conservative_exercise');
             }
             if (findings.elevation) {
-                const box = document.getElementById('conservative_elevation') ||
-                           document.getElementById('cvi_conservative_elevation');
-                if (box && !box.checked) box.checked = true;
+                tryCheck('conservative_elevation');
+                tryCheck('cvi_conservative_elevation');
             }
-            if (findings.mld) {
-                const box = document.getElementById('conservative_mld');
-                if (box && !box.checked) box.checked = true;
+            if (findings.mld) tryCheck('conservative_mld');
+
+            // Measurements (serial circumferences, etc.)
+            if (findings.measurements) tryCheck('measurements');
+
+            // PCD device trial response
+            if (findings.deviceResponse) tryCheck('device_response');
+
+            // E0652 unique characteristics
+            if (findings.uniqueCharacteristics) {
+                tryCheck('e0652_unique');
+                tryCheck('bcbs_e0652_unique_chars');
             }
 
-            // Auto-check measurements if found
-            if (findings.measurements) {
-                const box = document.getElementById('measurements');
-                if (box && !box.checked) box.checked = true;
-            }
-
-            // Update results after auto-checking
             updateResults();
+            return count;
         }
 
         function closePdf() {
