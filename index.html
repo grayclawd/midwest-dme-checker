@@ -2005,6 +2005,12 @@
             document.getElementById('step4').classList.remove('hidden');
 
             updateResults();
+
+            // If a PDF was already loaded, auto-check boxes now that the checklist is visible
+            if (currentPdfFindings) {
+                autoCheckBoxes(currentPdfFindings);
+                displayFindings(currentPdfFindings, pdfAutoCheckedCount);
+            }
         }
 
         function getApplicableRequirements() {
@@ -2323,6 +2329,8 @@ Midwest Compression`;
 
         let currentPdfUrl = null;
         let currentPdfName = null;
+        let currentPdfFindings = null;   // stored so showChecklist can re-run auto-check
+        let pdfAutoCheckedCount = 0;     // accumulated across all autoCheckBoxes calls for one PDF
 
         function initDropZone() {
             const dropZone = document.getElementById('dropZone');
@@ -2435,9 +2443,18 @@ Midwest Compression`;
                 // Analyze text for patterns
                 const findings = analyzeDocumentText(text);
 
-                // Auto-check boxes first (returns count), then display findings with count
-                const autoCheckedCount = autoCheckBoxes(findings);
-                displayFindings(findings, autoCheckedCount);
+                // Store globally so showChecklist can re-run auto-check if form filled later
+                pdfAutoCheckedCount = 0;
+                currentPdfFindings = findings;
+
+                // Auto-fill payor/category/code/date/indication — may trigger showChecklist
+                autoFillForm(findings);
+
+                // Auto-check any remaining unchecked items (idempotent if showChecklist already ran)
+                autoCheckBoxes(findings);
+
+                // Display findings with accumulated auto-check count
+                displayFindings(findings, pdfAutoCheckedCount);
 
             } catch (error) {
                 console.error('Error analyzing PDF:', error);
@@ -2473,6 +2490,12 @@ Midwest Compression`;
                 dates: [],
                 hcpcsCodesFound: [],
                 hasOrderFields: false,
+                // Auto-fill targets
+                detectedPayor: null,
+                detectedCategory: null,
+                detectedHcpcs: null,
+                detectedIndication: null,
+                detectedOrderDate: null,
                 // Clinical documentation
                 conservativeTherapy: false,
                 conservativeTrialFailed: false,
@@ -2585,6 +2608,51 @@ Midwest Compression`;
             const faxMatches = [...text.matchAll(/fax\s*:?\s*(\d{3}[-.]?\d{3}[-.]?\d{4})/gi)];
             if (faxMatches.length > 0) findings.faxNumbers = faxMatches.map(m => m[1]);
 
+            // ---- Auto-fill targets ----
+
+            // Payor: find insurance line, match specific payors; default medicare
+            const insLineMatch = text.match(/Insurance:?[^\n]*\n?[^\n]*Primary[^\n]*/i) ||
+                                 text.match(/Insurance:?\s+([^\n]+)/i);
+            const insText = insLineMatch ? insLineMatch[0].toLowerCase() : lower;
+            if (/humana/i.test(insText))                                   findings.detectedPayor = 'humana';
+            else if (/priority\s*health/i.test(insText))                   findings.detectedPayor = 'priority_health';
+            else if (/united\s*health|unitedhealthcare|\buhc\b/i.test(insText)) findings.detectedPayor = 'uhc';
+            else if (/blue\s*cross|blue\s*shield|\bbcbs\b|blue\s*care/i.test(insText)) findings.detectedPayor = 'bcbs_mi';
+            else                                                            findings.detectedPayor = 'medicare';
+
+            // Primary billed code: pump > garment > shoe (sleeves E066x not primary)
+            const pumpCodes  = ['E0652', 'E0651', 'E0650'];
+            const foundPump  = pumpCodes.find(c => findings.hcpcsCodesFound.includes(c));
+            const foundGarment = findings.hcpcsCodesFound.find(c => c.startsWith('A6') && parseInt(c.slice(1)) >= 6530 && parseInt(c.slice(1)) <= 6600);
+            const foundShoe    = findings.hcpcsCodesFound.find(c => /^A55(0[0-9]|1[0-4])$/.test(c));
+
+            if (foundPump) {
+                findings.detectedCategory = 'pcd';
+                findings.detectedHcpcs    = foundPump;
+            } else if (foundGarment) {
+                findings.detectedCategory = 'garment';
+                findings.detectedHcpcs    = foundGarment;
+            } else if (foundShoe) {
+                findings.detectedCategory = 'shoe';
+                findings.detectedHcpcs    = foundShoe;
+            }
+
+            // Indication: lymphedema codes → lymphedema; CVI/venous ulcer → cvi
+            const hasCvi = findings.diagnosis.some(c => /^(I87|L97|I83)/i.test(c));
+            if (findings.diagnosis.some(c => c.toUpperCase().startsWith('I89')))
+                findings.detectedIndication = 'lymphedema';
+            else if (hasCvi)
+                findings.detectedIndication = 'cvi';
+
+            // Order date: prefer explicit "Order Date:" field, convert to YYYY-MM-DD
+            const orderDateMatch = text.match(/Order\s+Date:?\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i);
+            if (orderDateMatch) {
+                const parts = orderDateMatch[1].split(/[\/\-]/);
+                let year = parts[2];
+                if (year.length === 2) year = '20' + year;
+                findings.detectedOrderDate = `${year}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
+            }
+
             return findings;
         }
 
@@ -2592,7 +2660,17 @@ Midwest Compression`;
             const insightsContent = document.getElementById('insightsContent');
             let html = '';
 
-            // Auto-check summary at top
+            // Auto-filled form fields
+            const filledParts = [];
+            if (findings.detectedPayor)     filledParts.push(PAYOR_LABELS[findings.detectedPayor] || findings.detectedPayor);
+            if (findings.detectedHcpcs)     filledParts.push(findings.detectedHcpcs);
+            if (findings.detectedIndication) filledParts.push(findings.detectedIndication.charAt(0).toUpperCase() + findings.detectedIndication.slice(1));
+            if (findings.detectedOrderDate)  filledParts.push('DOS ' + findings.detectedOrderDate.replace(/(\d{4})-(\d{2})-(\d{2})/, '$2/$3/$1'));
+            if (filledParts.length > 0) {
+                html += `<div class="insights-item found auto-check-summary">📋 Form auto-filled: ${filledParts.join(' · ')}</div>`;
+            }
+
+            // Auto-check summary
             if (autoCheckedCount > 0) {
                 html += `<div class="insights-item found auto-check-summary">✅ ${autoCheckedCount} item${autoCheckedCount !== 1 ? 's' : ''} auto-checked — verify each before submitting</div>`;
             }
@@ -2680,7 +2758,6 @@ Midwest Compression`;
                 const box = document.getElementById(id);
                 if (!box || box.checked || box.dataset.redflag) return;
                 box.checked = true;
-                // Badge: append to the item-text span so it sits inline with the label
                 const itemText = box.closest('.checklist-item')?.querySelector('.item-text');
                 if (itemText && !itemText.querySelector('.auto-badge')) {
                     const badge = document.createElement('span');
@@ -2689,6 +2766,7 @@ Midwest Compression`;
                     itemText.appendChild(badge);
                 }
                 count++;
+                pdfAutoCheckedCount++; // accumulate for display
             }
 
             // SWO completeness: all key fields present
@@ -2756,6 +2834,40 @@ Midwest Compression`;
             return count;
         }
 
+        // Auto-fill the form (payor, category, code, date, indication) from PDF findings.
+        // Called when a PDF is dropped; triggers the full form chain so showChecklist fires automatically.
+        function autoFillForm(findings) {
+            // Payor
+            if (findings.detectedPayor && !state.payor) {
+                selectPayor(findings.detectedPayor);
+            }
+
+            // Category → populates the HCPCS dropdown
+            if (findings.detectedCategory && !state.category) {
+                selectCategory(findings.detectedCategory);
+            }
+
+            // HCPCS code → selects in dropdown
+            if (findings.detectedHcpcs && !state.hcpcsCode && state.category === findings.detectedCategory) {
+                const select = document.getElementById('hcpcsSelect');
+                if (select && [...select.options].some(o => o.value === findings.detectedHcpcs)) {
+                    select.value = findings.detectedHcpcs;
+                    selectHCPCS();
+                }
+            }
+
+            // Date of service (set before indication so PCD showChecklist fires correctly)
+            if (findings.detectedOrderDate && !state.dateOfService) {
+                document.getElementById('dateOfService').value = findings.detectedOrderDate;
+                updateDateOfService();
+            }
+
+            // Indication (PCD only) — this triggers showChecklist if code + date are set
+            if (findings.detectedIndication && state.category === 'pcd' && !state.indication) {
+                selectIndication(findings.detectedIndication);
+            }
+        }
+
         function closePdf() {
             const dropZone = document.getElementById('dropZone');
             const viewer = document.getElementById('pdfViewer');
@@ -2776,6 +2888,8 @@ Midwest Compression`;
             viewer.classList.add('hidden');
             insightsPanel.classList.add('hidden');
             dropZone.classList.remove('hidden');
+            currentPdfFindings = null;
+            pdfAutoCheckedCount = 0;
 
             // Reset file input
             document.getElementById('fileInput').value = '';
